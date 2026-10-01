@@ -121,7 +121,7 @@ function check() {
       const path = space === -1 ? "" : cap.http.slice(space + 1);
       if (!method || !path.startsWith("/")) {
         report(`capability "${cap.id}" has an unparsable http surface "${cap.http}".`);
-      } else if (!routes.has(`${method} ${path}`)) {
+      } else if (!routes.has(`${method} ${path}`) && !routes.has(`${method} ${path.split("?")[0]}`)) {
         report(`capability "${cap.id}" names HTTP route "${cap.http}", which the API does not register.`);
       }
     }

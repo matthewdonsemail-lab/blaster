@@ -14,6 +14,7 @@ import {
   type AddPoolNumberInput,
   type BatchSendResult,
   type ConversationMessageRow,
+  type ConversationPersonRow,
   type ConversationSummary,
   type CreatePoolInput,
   type EnrollResult,
@@ -44,6 +45,8 @@ export interface BlasterApiClientOptions {
 
 export interface BlasterApiClient {
   listConversations(query?: ListConversationsQuery): Promise<ConversationSummary[]>;
+  /** One row per person: the grouped inbox view of the same query. */
+  listConversationPersons(query?: ListConversationsQuery): Promise<ConversationPersonRow[]>;
   conversationMessages(conversationId: string, limit?: number): Promise<ConversationMessageRow[]>;
   /**
    * The workspace's sendable numbers, for a sender selector.
@@ -210,6 +213,17 @@ export function createBlasterApiClient(options: BlasterApiClientOptions): Blaste
         withCampaign: query.withCampaign,
       });
       return body.conversations;
+    },
+
+    async listConversationPersons(query = {}) {
+      const body = await get<{ persons: ConversationPersonRow[] }>("/api/conversations", {
+        limit: query.limit,
+        number: query.number,
+        campaign: query.campaign,
+        withCampaign: true,
+        groupBy: "person",
+      });
+      return body.persons;
     },
 
     async conversationMessages(conversationId, limit) {

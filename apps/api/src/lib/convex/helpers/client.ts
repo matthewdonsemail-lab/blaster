@@ -1,7 +1,7 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../../../../convex/_generated/api.js";
 import type { Id } from "../../../../../../convex/_generated/dataModel.js";
-import type { ConversationMessageRow, ConversationSummary, PoolDetail, PoolNumberRow, PoolSummary, SequenceOption } from "@blaster/core";
+import type { ConversationMessageRow, ConversationPersonRow, ConversationSummary, PoolDetail, PoolNumberRow, PoolSummary, SequenceOption } from "@blaster/core";
 
 /**
  * The API's Convex client.
@@ -119,12 +119,14 @@ export interface ConversationQuery {
   number?: string;
   campaign?: string;
   withCampaign?: boolean;
+  /** Fold the rows into one per person; forces the campaign resolution. */
+  groupBy?: "person";
 }
 
 export type ReadResult<T> = { status: "ok"; rows: T[] } | { status: "not-configured" } | { status: "failed"; error: string };
 
 /** Conversations, newest activity first, with the inbox filters applied. */
-export async function listConversations(query: ConversationQuery = {}): Promise<ReadResult<ConversationRow>> {
+export async function listConversations(query: ConversationQuery = {}): Promise<ReadResult<ConversationRow | ConversationPersonRow>> {
   const client = convexClient();
   if (!client) return { status: "not-configured" };
   try {

@@ -223,6 +223,10 @@ const inbox = new Hono();
 
 inbox.get("/conversations", requireOperator, async (c) => {
   const limit = Number(c.req.query("limit") ?? "") || undefined;
+  const groupBy = c.req.query("groupBy");
+  if (groupBy !== undefined && groupBy !== "person") {
+    return c.json({ error: "Unsupported groupBy: expected person" }, 400);
+  }
   const result = await listConversations({
     ...(limit ? { limit } : {}),
     ...(c.req.query("number") ? { number: c.req.query("number") as string } : {}),
@@ -230,6 +234,8 @@ inbox.get("/conversations", requireOperator, async (c) => {
     // The campaign costs a lookup per row, so it is only resolved when asked
     // for rather than on every list.
     withCampaign: c.req.query("campaign") !== undefined || c.req.query("withCampaign") === "true",
+    // The person fold needs the campaign union, so it forces the resolution.
+    ...(groupBy === "person" ? { groupBy: "person" as const } : {}),
   });
   if (result.status === "not-configured") {
     return c.json({ error: "CONVEX_URL is not configured" }, 503);
@@ -237,7 +243,8 @@ inbox.get("/conversations", requireOperator, async (c) => {
   if (result.status === "failed") {
     return c.json({ error: "Failed to read conversations", detail: result.error }, 502);
   }
-  return c.json({ count: result.rows.length, conversations: result.rows });
+  const payload = groupBy === "person" ? { count: result.rows.length, persons: result.rows } : { count: result.rows.length, conversations: result.rows };
+  return c.json(payload);
 });
 
 /**

@@ -93,4 +93,18 @@ export const ref = {
   lift: makeFunctionReference<"mutation", { peer: string }, { peer: string; lifted: boolean }>(
     "suppressions/mutations:lift",
   ),
+  listConversations: makeFunctionReference<
+    "query",
+    { limit?: number; number?: string; campaign?: string; withCampaign?: boolean; groupBy?: "person" },
+    Array<{
+      phoneNumber: string;
+      blasterNumbers: string[];
+      conversationIds: string[];
+      latestMessageAt: number;
+      messageCount: number;
+      campaignId: string | null;
+      campaignGroup: "unassigned" | "multiple" | "one";
+      candidateCampaignIds?: string[];
+    }>
+  >("conversations/queries:listConversations"),
 } as const;

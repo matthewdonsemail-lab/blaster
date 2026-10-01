@@ -63,6 +63,14 @@ Consequences:
 - No schema migration. This is a read-shape decision, and the write path
   (`resolveConversation`) is untouched.
 
+Implementation (on `jilly-pool-domain`): the fold is `groupByPerson` in
+`convex/conversations/model.ts` with a `groupBy: "person"` argument on
+`listConversations`; the API route accepts `?groupBy=person` and returns
+`persons`; the core client adds `listConversationPersons`; the CLI adds
+`blaster inbox list --person`; MCP gains `blaster_list_conversation_persons`.
+Integration tests in `convex/test/conversations.test.ts` cover the fold, the
+separate-people case, and the campaign union.
+
 Ruled out: re-keying conversations on the peer (loses the sending number), and a
 denormalized `person` table (a cache with no owner, since the truth is derivable
 from the threads in one query).

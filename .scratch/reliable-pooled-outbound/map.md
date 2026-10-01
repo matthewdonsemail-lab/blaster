@@ -34,7 +34,7 @@ and all three surfaces — and the decisions are made, not just the code written
 
 - [Suppression model](issues/01-suppression-model.md): a durable per-person `suppressions` row keyed on the E.164 peer, written by the inbound STOP only, additive over `opted-out`, checked at enroll and at send, lifted only by an explicit human resolve.
 - [A Convex integration-test harness](issues/04-convex-test-harness.md): `convex/test/` runs the real functions against the real schema, holding the fixes for pool cursor/TOCTOU, campaignFor, and suppression.
-- [Thread identity under rotation](issues/02-thread-identity.md): keep the per-number threads as storage; the inbox gains a person-level grouping, and person-level facts (reply, STOP, suppression) are already peer-wide.
+- [Thread identity under rotation](issues/02-thread-identity.md): keep the per-number threads as storage; the inbox gains a person-level grouping, and person-level facts (reply, STOP, suppression) are already peer-wide. Implemented on the branch as `groupBy: "person"` on `listConversations` (MCP `blaster_list_conversation_persons`, `GET /api/conversations?groupBy=person`, `blaster inbox list --person`).
 - [Limiter and pool budget relationship](issues/03-limiter-pool-relationship.md): the rate limiter is the hard ceiling, the pool paces at or under it, the period has one source, and disagreement resolves by refusing, never by sending.
 ## Not yet specified
 

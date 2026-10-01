@@ -46,6 +46,28 @@ export interface ConversationMessageRow {
   media: Array<{ url: string; contentType?: string; size?: number }> | null;
 }
 
+/**
+ * One person row in the grouped inbox: the read-shape decision of
+ * `.scratch/reliable-pooled-outbound/issues/02-thread-identity.md`.
+ *
+ * The per-number threads stay the storage model; this folds their summaries
+ * into one row per person. The campaign is the union of the person's
+ * threads' campaigns, reported as `multiple` when they differ.
+ */
+export interface ConversationPersonRow {
+  phoneNumber: string;
+  /** The pool numbers this person was reached from, sorted. */
+  blasterNumbers: string[];
+  /** The per-number threads that fold into this row. */
+  conversationIds: string[];
+  latestMessageAt: number;
+  /** The messages across all of this person's threads. */
+  messageCount: number;
+  campaignId: string | null;
+  campaignGroup: CampaignGroup;
+  candidateCampaignIds?: string[];
+}
+
 export interface ListConversationsQuery {
   limit?: number;
   /** Only threads for this sending number, E.164. */
@@ -53,6 +75,8 @@ export interface ListConversationsQuery {
   /** Only threads in this campaign. Resolves the campaign, so it costs more. */
   campaign?: string;
   withCampaign?: boolean;
+  /** Fold the rows into one per person: the inbox's grouped view. */
+  groupBy?: "person";
 }
 
 /** What the provider said about a message we just handed it. */

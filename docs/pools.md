@@ -235,11 +235,14 @@ number per sequence. Four things move through it:
   three conversations, because a conversation is keyed on `(peer,
   blasterNumber)`. The campaign grouping reunites them under one campaign, but
   the default inbox shows one row per number.
+- **The inbox can fold per person.** `listConversations` takes `groupBy:
+  "person"` (MCP `blaster_list_conversation_persons`, `GET /api/conversations?groupBy=person`,
+  `blaster inbox list --person`), which returns one row per person listing the
+  numbers they were reached from, with the person's campaign as the union of
+  their threads' campaigns (`multiple` when they differ). Storage is unchanged:
+  the per-number threads stay the record, and the fold is a read.
 
-Known gap: an opt-out (`STOP`) is recorded on the enrollment, and the enrollment
-is sticky, but there is no durable per-peer suppression. A later enrollment in a
-different sequence, from a different number, re-snapshots `doNotContact` from the
-Twenty prospect and can text someone who already opted out unless that field was
-updated. Pools make this more likely because they multiply the numbers a
-prospect can be reached from. Closing it means a `suppressions` table keyed on
-the E.164 peer, written by the inbound opt-out and checked at enroll and at send.
+Closed: the durable per-peer suppression now exists — `convex/suppressions/`,
+keyed on the E.164 peer, written by the inbound opt-out, and checked at enroll
+and at send. An operator lifts it explicitly; until then no sequence can reach
+the person.

@@ -110,6 +110,85 @@ describe("campaignFor", () => {
   });
 });
 
+/**
+ * The grouped inbox view: one row per person, folded over their pool numbers.
+ *
+ * The read-shape decision of `.scratch/reliable-pooled-outbound/issues/02-thread-identity.md`:
+ * storage stays keyed on `(peer, blasterNumber)`; the person fold is a query
+ * argument, and the person's campaign is the union of their threads' campaigns.
+ */
+describe("listConversations: person grouping", () => {
+  async function seedThreadsForPeer(t: Backend, peer: string, numbers: string[]) {
+    for (const blasterNumber of numbers) await seedConversation(t, peer, blasterNumber);
+  }
+
+  test("folds one person's pool-number threads into a single row", async () => {
+    const t = testBackend();
+    await seedThreadsForPeer(t, "+13125550009", ["+15550000001", "+15550000002", "+15550000003"]);
+
+    const rows = await t.query(ref.listConversations, { limit: 10, groupBy: "person" });
+    expect(rows).toHaveLength(1);
+    const person = required(rows[0]);
+    expect(person.phoneNumber).toBe("+13125550009");
+    expect(person.blasterNumbers).toEqual(["+15550000001", "+15550000002", "+15550000003"]);
+    expect(person.conversationIds).toHaveLength(3);
+    expect(person.messageCount).toBe(0);
+    expect(person.campaignGroup).toBe("unassigned");
+    expect(person.campaignId).toBeNull();
+  });
+
+  test("separate people stay separate rows", async () => {
+    const t = testBackend();
+    await seedThreadsForPeer(t, "+13125550009", ["+15550000001", "+15550000002"]);
+    await seedThreadsForPeer(t, "+13125550010", ["+15550000001"]);
+
+    const rows = await t.query(ref.listConversations, { limit: 10, groupBy: "person" });
+    expect(rows).toHaveLength(2);
+    const byNumber = new Map(rows.map((row) => [row.phoneNumber, row] as [string, (typeof rows)[number]]));
+    expect(byNumber.get("+13125550009")?.blasterNumbers).toHaveLength(2);
+    expect(byNumber.get("+13125550010")?.blasterNumbers).toHaveLength(1);
+  });
+
+  test("a person's campaign is the union of their threads' campaigns", async () => {
+    const t = testBackend();
+    const seqA = await seedSequence(t, { fromNumber: "+15550000001", campaignId: "cmp-a" });
+    const seqB = await seedSequence(t, { fromNumber: "+15550000002", campaignId: "cmp-b" });
+    await t.run(async (ctx) => {
+      await ctx.db.insert("sequenceEnrollments", {
+        sequenceId: seqA as never,
+        recipientId: "p1",
+        to: "+13125550011",
+        cursor: 0,
+        status: "active",
+        enrolledAt: 1,
+      });
+      await ctx.db.insert("sequenceEnrollments", {
+        sequenceId: seqB as never,
+        recipientId: "p1",
+        to: "+13125550011",
+        cursor: 0,
+        status: "active",
+        enrolledAt: 2,
+      });
+    });
+    await seedConversation(t, "+13125550011", "+15550000001");
+    await seedConversation(t, "+13125550011", "+15550000002");
+
+    const rows = await t.query(ref.listConversations, { limit: 10, groupBy: "person" });
+    expect(rows).toHaveLength(1);
+    const person = required(rows[0]);
+    expect(person.campaignGroup).toBe("multiple");
+    expect(person.candidateCampaignIds).toEqual(["cmp-a", "cmp-b"]);
+  });
+
+  test("threads without groupBy are returned per-number as before", async () => {
+    const t = testBackend();
+    await seedThreadsForPeer(t, "+13125550009", ["+15550000001", "+15550000002"]);
+    const rows = await t.query(ref.listConversations, { limit: 10 });
+    expect(rows).toHaveLength(2);
+  });
+});
+
 describe("recordInboundMessage: a reply stops enrollments peer-wide", () => {
   test("stops an active enrollment for the peer and reports it", async () => {
     const t = testBackend();

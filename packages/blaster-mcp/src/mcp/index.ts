@@ -240,6 +240,20 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "blaster_list_conversation_persons",
+    description:
+      "List SMS conversations one row per person: the peer's threads folded by person, with the pool numbers they were reached from and the person's campaign union. Slower than blaster_list_conversations because it resolves the campaign on every thread.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Page size, max 200. Defaults to 50." },
+        number: { type: "string", description: "Only threads for this sending number, in E.164." },
+        campaign: { type: "string", description: "Only people with a thread in this campaign id." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "blaster_get_messages",
     description:
       "Read every message in one conversation, oldest first, with direction, body, delivery status and timestamps. Use blaster_list_conversations to obtain a conversation id.",
@@ -721,6 +735,33 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
           // The same rows the CLI and the API return, so an agent and a human
           // are reading identical data rather than two renderings of it.
           structured: { count: rows.length, conversations: rows },
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_list_conversation_persons": {
+      try {
+        const client = blasterApi();
+        const rows = await client.listConversationPersons({
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+          number: typeof args.number === "string" ? args.number : undefined,
+          campaign: typeof args.campaign === "string" ? args.campaign : undefined,
+        });
+        return {
+          text:
+            rows.length === 0
+              ? "No conversations yet."
+              : rows
+                  .map(
+                    (row) =>
+                      `${row.phoneNumber} via ${row.blasterNumbers.join(", ")}: ${row.messageCount} message(s), ` +
+                      `last at ${new Date(row.latestMessageAt).toISOString()}` +
+                      (row.campaignGroup === "multiple" ? ` - ${row.candidateCampaignIds?.length ?? "?"} campaigns` : ""),
+                  )
+                  .join("\n"),
+          structured: { count: rows.length, persons: rows },
         };
       } catch (error) {
         return { text: describeApiError(error) };

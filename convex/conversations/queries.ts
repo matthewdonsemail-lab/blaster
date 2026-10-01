@@ -12,6 +12,7 @@ import {
   MAX_MESSAGE_LIMIT,
   campaignFor,
   clamp,
+  groupByPerson,
   summaryOf,
   type CampaignGroup,
 } from "./model.js";
@@ -53,6 +54,9 @@ export const listConversations = query({
      * lookup per conversation, and a list view that does not group does not
      * need it. */
     withCampaign: v.optional(v.boolean()),
+    /** Fold the rows into one per person: the inbox's grouped view. Requires
+     * `withCampaign` so the fold can report a person's campaign union. */
+    groupBy: v.optional(v.literal("person")),
   },
   handler: async (ctx, args) => {
     const limit = clamp(args.limit, DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT);
@@ -77,7 +81,7 @@ export const listConversations = query({
       .sort((a, b) => b.latestMessageAt - a.latestMessageAt)
       .slice(0, limit);
 
-    const withCampaigns = args.withCampaign === true || args.campaign !== undefined;
+    const withCampaigns = args.withCampaign === true || args.campaign !== undefined || args.groupBy === "person";
     type Row = ReturnType<typeof summaryOf> & {
       campaignId?: string | null;
       sequenceId?: Id<"sequences"> | null;
@@ -106,6 +110,16 @@ export const listConversations = query({
             (row.campaignGroup === "multiple" && (row.candidateCampaignIds ?? []).includes(wanted)),
         )
       : resolved;
+
+    if (args.groupBy === "person") {
+      const rows = groupByPerson(filtered);
+      return rows.filter(
+        (row) =>
+          !wanted ||
+          (row.campaignGroup === "one" && row.campaignId === wanted) ||
+          (row.campaignGroup === "multiple" && (row.candidateCampaignIds ?? []).includes(wanted)),
+      );
+    }
 
     return filtered;
   },

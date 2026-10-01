@@ -147,6 +147,7 @@ const CAPABILITIES = [
   { id: "suppressions.set", cli: "blaster suppress add|remove", mcp: "blaster_set_suppression", http: "POST /api/suppressions" },
   { id: "sequences.enroll", cli: "blaster sequence enroll", mcp: "blaster_enroll_recipients", http: "POST /api/sequences/:id/enroll" },
   { id: "conversations.list", cli: "blaster inbox list", mcp: "blaster_list_conversations", http: "GET /api/conversations" },
+  { id: "conversations.persons", cli: "blaster inbox list --person", mcp: "blaster_list_conversation_persons", http: "GET /api/conversations?groupBy=person" },
   { id: "conversations.read", cli: "blaster inbox show", mcp: "blaster_get_messages", http: "GET /api/conversations/:id/messages" },
   { id: "auth.login", cli: "blaster login", mcp: "", http: "" },
   { id: "auth.logout", cli: "blaster logout", mcp: "", http: "" },

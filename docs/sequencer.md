@@ -18,32 +18,25 @@ are going out, and discovers otherwise from a prospect.
 | Dry run of the real statechart | `pipeline/sequence/helpers/dry-run.ts` | done, tested |
 | Draft storage, and the CLI that edits it | `blaster sequence` | done, 17 tests |
 | Persistence | `convex/sequence/` | tables and functions exist |
-| **The runner** | `convex/sequence/actions.ts` | exists; selects its sender from a pool when one is assigned |
+| **The runner** | `convex/sequence/actions.ts` | scheduled by `convex/crons.ts`; selects its sender from a pool when one is assigned |
 
-## The exact crack
+## The exact crack, and what closed it
 
-`blaster sequence run` sends nothing. Three things are missing, and each one is
-a blocker on its own:
+The three blockers named below have been closed on `jilly-pool-domain`:
 
-1. **`convex/schema.ts` rejects two of the machine's own statuses.**
-   `sequenceEnrollments.status` is `active | replied | opted-out | paused |
-   completed`. The machine can produce `ambiguous` and `awaiting-human`. Persist
-   one and validation fails. The statechart is ahead of the schema.
+1. **The schema now accepts the machine's statuses.** `ambiguous` and
+   `awaiting-human` are persisted by the runner's deferral paths.
+2. **The claims table exists.** `sequenceSendClaims` has a unique index on
+   `[enrollmentId, cursor]`, and the internal `claimStep` mutation is the only
+   door into it.
+3. **`convex.json` and `convex/crons.ts` exist.** A one-minute cron drains
+   `runDueEnrollments` with a batch of 25; `docs/pools.md` and
+   `goal.md` track the state.
 
-2. **There is no claims table.** The machine asks for a claim before every send
-   and treats losing the race as "do not send". Nothing enforces that, because
-   there is no `sequenceSendClaims` table and no unique index on
-   `enrollmentId` + `cursor` to collide against. Until there is, `CLAIM_TAKEN`
-   and `CLAIM_HELD_BY_OTHER` are events the runner could only ever fake.
-
-3. **There is no `convex.json`.** No cron has ever run in this project. So
-   `dueEnrollments` — which exists, and is correct — is read by nobody, and a due
-   enrollment is never woken. This is the one that actually stops the feature.
-
-Two more that are not blockers but are not done either:
-
-- **`recordStep`, `dueEnrollments`, `enrollRecipients` and `createSequence` are
-  all defined and all never called.**
+What remains open is the *delivery* step: this branch has not been merged, and
+nothing has been observed sending against a live deployment. The test harness in
+`convex/test/` proves the Convex layer; the last mile is `pnpm convex:deploy`
+and watching the cron fire.
 
 ## A reply stops the sequence, and tells a human
 
@@ -189,24 +182,19 @@ are local working material: a draft becomes real when the runner picks it up.
 
 Each step is independently shippable, and each is small.
 
-1. **Add `ambiguous` and `awaiting-human`** to the `sequenceEnrollments.status`
-   union. Nothing persists until this is done.
-2. **Add `sequenceSendClaims`** with a unique index on `[enrollmentId, cursor]`,
-   and a `claimStep` mutation that returns `claimed | already-claimed`. Make it
-   `internal` — only the runner may claim.
-3. **Add `convex.json` and `crons.ts`** with a one-minute cron, plus a
-   `runDueEnrollments` internal action: read `dueEnrollments`, build the machine
-   input, send `TICK`, perform the resulting `SequenceEffect`, and report the
-   outcome back as an event. The effect is the whole interface: claim, then send.
-4. ~~**Stop the sequence on reply.**~~ **Done.** The verified webhook stores the
-   message and stops the enrollment in one transaction, then fans out a Bark
-   push. See above. What is *not* done is opt-out: a `STOP` keyword does not yet
-   mark the enrollment `opted-out`, so a person who unsubscribes mid-sequence is
-   stopped by the same reply path but their prospect is not marked, and a manual
-   send would still reach them.
-5. **Enrol over `agencyProspects`**, reusing the `searchProspectsPage` filter DSL
-   so enrolment targets exactly what `blaster send` targets, and mirror
-   `outboundState` back so operators see position in Twenty.
+1. ~~**Add `ambiguous` and `awaiting-human`**~~ **Done.**
+2. ~~**Add `sequenceSendClaims`**~~ **Done**, with the internal `claimStep` mutation.
+3. ~~**Add `convex.json` and `crons.ts`**~~ **Done.** The one-minute cron drains
+   `runDueEnrollments` with a batch of 25.
+ 4. ~~**Stop the sequence on reply.**~~ **Done.** The verified webhook stores the
+    message and stops the enrollment in one transaction, then fans out a Bark
+    push. See above. A `STOP` keyword now marks the enrollment `opted-out` and
+    writes the durable per-peer `suppressions` row in the same transaction, so a
+    later enrollment from another number or sequence is refused at enroll and at
+    send.
+ 5. ~~**Enrol over `agencyProspects`**~~ **Done.** `enrollRecipients` walks
+    `agencyProspects` with the send filter DSL and mirrors `outboundState` back,
+    exposed on all three surfaces.
 
 Step 3 needs a decision this page does not make: **where the send runs.** Convex
 has no Telnyx component mounted — the note in `convex.config.ts` records that the

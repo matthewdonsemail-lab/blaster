@@ -1,8 +1,8 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-01T21:38:29Z
-commit: goal: scope the pool objective and gate pushes on a fresh outline
+updated: 2026-10-01T22:08:15Z
+commit: inbox: one row per person in the pool view
 -->
 
 The running scope for the number-pool objective. `scripts/check-goal.mjs` refuses
@@ -97,6 +97,12 @@ the per-number or account ceiling.
 - packages/blaster-cli/src/cli/suppress.ts
 - convex/sequence/enrollment.ts
 - convex/sequence/queries.ts
+- packages/core/src/blaster/api/types.ts
+- packages/core/src/blaster/api/helpers/client.ts
+- packages/blaster-cli/src/cli/inbox.ts
+- packages/blaster-mcp/src/mcp/index.ts
+- docs/sequencer.md
+- pnpm-lock.yaml
 
 ## Task
 
@@ -117,4 +123,5 @@ the per-number or account ceiling.
 - [x] Decided how a contact from several pool numbers appears in the inbox (ticket 02): per-number threads stay, the inbox gains a person-level grouping
 - [x] Decided the limiter/pool budget contract (ticket 03): limiter is the hard ceiling, pool paces at or under it
 - [x] Convex-Twenty seam: `sequence/actions.enrollRecipients` walks `agencyProspects` with the send filter DSL, enrolls, and mirrors `outboundState`; API/CLI/MCP surfaces
+- [x] Person-level inbox view (ticket 02 implementation): `groupBy: "person"` on `listConversations` folds one row per person over their pool numbers; `GET /api/conversations?groupBy=person`, core client `listConversationPersons`, `blaster inbox list --person`, MCP `blaster_list_conversation_persons`; integration tests
 - [ ] Open the PR and get the pool branch merged to `main` (ticket 05)
