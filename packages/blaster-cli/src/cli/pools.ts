@@ -1,0 +1,394 @@
+/**
+ * `blaster pools ...`: manage number pools and assign one to a sequence.
+ *
+ * Every command goes through the shared `createBlasterApiClient`, so what a
+ * script does here is what the MCP tools and the HTTP routes do. Scriptable and
+ * prompt-free: anything a script would supply is a flag, and a missing flag is
+ * a message naming it rather than a hang.
+ */
+
+import {
+  BlasterApiError,
+  createBlasterApiClient,
+  type BlasterApiClient,
+  type PoolDetail,
+  type PoolSummary,
+  type SendingNumber,
+  type SequenceOption,
+} from "@blaster/core";
+import { ensureLiveSession, loadHome, loginMain } from "./login.ts";
+import type { CliFlags } from "./inbox.ts";
+import {
+  abort,
+  askConfirm,
+  askMultiSelect,
+  askSelect,
+  askText,
+  begin,
+  fail,
+  finish,
+  isInteractive,
+  note,
+} from "./prompt.ts";
+
+export const POOLS_USAGE = `Usage: blaster pool [action]
+
+  (no action)                   Interactive: name a pool, pick its numbers, and
+                                optionally assign it to a sequence
+  list                          Every pool, newest first
+  show <pool-id>                One pool with its numbers in order
+  create --name <name> [--min-spacing <ms>] [--daily-cap <n>]
+                                Create a pool
+  add-number --pool <id> --number <e164> [--order <n>]
+                                Add a number (or reactivate a removed one)
+  remove-number --pool <id> --number <e164>
+                                Remove a number. Soft: the membership is kept
+  reorder --pool <id> --order <e164,e164,...>
+                                Set the order the pool works its numbers in
+  assign --sequence <id> [--pool <id>]
+                                Assign a pool to a sequence; omit --pool to clear
+
+Run "blaster pool" in a terminal to build a pool interactively; the flags above
+are the scriptable path. A pool assigned to a sequence supplies the sending
+number at send time, in pool order and within each number's rate budget, so work
+is deferred instead of being pushed into the carrier's limit queue.
+
+Options
+  --api-url <url>               The API to read, defaulting to the signed-in one
+  --json                        Machine-readable output
+
+Reads the operator session written by "blaster login". The interactive wizard
+requires that session; without it, run "blaster login" first.`;
+
+/**
+ * A live client for the operator's signed-in API, or an exit code with the
+ * reason already printed.
+ *
+ * Goes through `ensureLiveSession` rather than reading the stored token: a
+ * stored access token expires on its own, and using it directly makes a
+ * refreshable session look broken. When the session cannot be produced and a
+ * human is watching, a sign-in is offered rather than demanded. This is the
+ * login gate the pool commands sit behind; `help` and usage never reach it.
+ */
+async function liveClient(flags: CliFlags, json: boolean, root: string): Promise<BlasterApiClient | number> {
+  const home = loadHome(root);
+  const explicit = typeof flags.get("api-url") === "string" ? (flags.get("api-url") as string) : null;
+  const apiUrl =
+    (explicit !== null && explicit !== "" ? explicit : null) ??
+    home.config.apiUrl ??
+    Object.keys(home.sessions)[0] ??
+    null;
+  if (!apiUrl) {
+    console.error('blaster pool: no signed-in API. Run "blaster login" first, or pass --api-url.');
+    return 1;
+  }
+  let session = await ensureLiveSession(root, apiUrl);
+  if (!session) {
+    if (!isInteractive(json)) {
+      console.error(`blaster pool: no live session for ${apiUrl}. Run "blaster login" first.`);
+      return 1;
+    }
+    const code = await loginMain(new Map([["api-url", apiUrl]]), json, root);
+    if (code !== 0) return code;
+    // Re-read rather than trusting the record from before the sign-in, because
+    // the sign-in is what just rewrote it.
+    session = await ensureLiveSession(root, apiUrl);
+    if (!session) {
+      console.error(`blaster pool: no live session for ${apiUrl}. Run "blaster login" first.`);
+      return 1;
+    }
+  }
+  return createBlasterApiClient({ baseUrl: apiUrl, accessToken: session.accessToken });
+}
+
+function report(error: unknown, json: boolean): number {
+  if (error instanceof BlasterApiError) {
+    if (error.kind === "unauthorized") {
+      const message = "The operator token is not accepted. Run \"blaster login\" again.";
+      console.error(json ? JSON.stringify({ error: message, kind: error.kind }, null, 2) : `blaster pools: ${message}`);
+      return 1;
+    }
+    console.error(json ? JSON.stringify({ error: error.message, kind: error.kind, status: error.status }, null, 2) : `blaster pools: ${error.message} (${error.status})`);
+    return error.kind === "unavailable" || error.kind === "server" ? 2 : 1;
+  }
+  console.error(`blaster pools: ${error instanceof Error ? error.message : String(error)}`);
+  return 1;
+}
+
+const asJson = (value: unknown): string => JSON.stringify(value, null, 2);
+
+const text = (value: string | boolean | undefined): string | undefined =>
+  typeof value === "string" ? value : undefined;
+
+function formatPoolList(pools: PoolSummary[]): string {
+  if (pools.length === 0) return "No pools yet.";
+  return pools
+    .map(
+      (pool) =>
+        `${pool.id}  ${pool.name}  [${pool.status}]  ` +
+        `${pool.activeNumberCount} active  next ${new Date(pool.nextAvailableAt).toISOString()}`,
+    )
+    .join("\n");
+}
+
+function formatPool(pool: PoolDetail): string {
+  const lines = [
+    `${pool.name} (${pool.id})`,
+    `status=${pool.status} strategy=${pool.strategy} cursor=${pool.cursor}`,
+    `spacing=${pool.minSpacingMs}ms dailyCapPerNumber=${pool.dailyCapPerNumber} active=${pool.activeNumberCount}`,
+    `nextAvailableAt=${new Date(pool.nextAvailableAt).toISOString()}`,
+    "numbers:",
+  ];
+  for (const number of pool.numbers) {
+    lines.push(
+      `  ${String(number.order).padStart(3)}  ${number.phoneNumber}  ` +
+        `[${number.status}] sentToday=${number.sentToday} next=${new Date(number.nextAvailableAt).toISOString()}`,
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The interactive build: name a pool, pick numbers, optionally assign it.
+ *
+ * Only reached from a TTY with a signed-in session. Every step is a Clack
+ * prompt, and each prompt can be seeded by a flag so the same code path is
+ * scriptable: `--name`, `--min-spacing`, `--daily-cap`. A cancel at any prompt
+ * stops the command and names what was left unchanged rather than creating half
+ * a pool.
+ */
+async function poolsWizard(
+  client: BlasterApiClient,
+  flags: CliFlags,
+  json: boolean,
+): Promise<number> {
+  begin("New number pool");
+
+  const nameFlag = text(flags.get("name"));
+  const name = nameFlag ?? (await askText("Pool name", { placeholder: "Ireland outbound" }));
+  if (!name) return abort("no pool was created,");
+
+  let numbers: SendingNumber[];
+  try {
+    numbers = await client.listSendingNumbers();
+  } catch (error) {
+    return report(error, json);
+  }
+  if (numbers.length === 0) {
+    fail("No sendable numbers were found for this workspace.");
+    note(
+      "Sending numbers",
+      "No number can send until its Twenty agencyPhones record has a messaging profile.",
+    );
+    return 1;
+  }
+
+  const chosen = await askMultiSelect(
+    "Numbers to add to the pool",
+    numbers.map((number) => ({
+      value: number.phoneNumber,
+      label: number.label,
+      ...(number.countryCode ? { hint: number.countryCode } : {}),
+    })),
+  );
+  if (chosen === null) return abort("no pool was created,");
+  if (chosen.length === 0) {
+    fail("Choose at least one number for the pool.");
+    return 1;
+  }
+
+  const spacing = text(flags.get("min-spacing"));
+  const dailyCap = text(flags.get("daily-cap"));
+
+  const created = await client.createPool({
+    name,
+    ...(spacing === undefined ? {} : { minSpacingMs: Number(spacing) }),
+    ...(dailyCap === undefined ? {} : { dailyCapPerNumber: Number(dailyCap) }),
+  });
+
+  // Added in the order they were chosen, so the pool's dispatch order matches
+  // the selection. Each add returns the pool as it now stands.
+  let pool: PoolDetail | null = null;
+  for (const phoneNumber of chosen) {
+    pool = await client.addPoolNumber({ poolId: created.id, phoneNumber });
+  }
+  note("Pool created", pool ? formatPool(pool) : `Pool ${created.id} with ${chosen.length} number(s).`);
+
+  const assign = await askConfirm("Assign this pool to a sequence now?", false);
+  if (assign === null) return abort("the pool was created, but nothing was assigned,");
+  if (assign) {
+    let sequences: SequenceOption[];
+    try {
+      sequences = await client.listSequences();
+    } catch (error) {
+      return report(error, json);
+    }
+    if (sequences.length === 0) {
+      fail("No sequences are stored yet, so there is nothing to assign to.");
+      note("Next step", 'Create one with "blaster sequence new", then run "blaster pool" again.');
+    } else {
+      const pick = await askSelect("Assign to which sequence?", [
+        ...sequences.map((sequence) => ({
+          value: sequence.id,
+          label: sequence.name,
+          hint: `${sequence.status}${sequence.poolId ? ` pool=${sequence.poolId}` : ""}`,
+        })),
+        { value: "__none__", label: "Do not assign" },
+      ]);
+      if (pick === null) return abort("the pool was created, but nothing was assigned,");
+      if (pick !== "__none__") {
+        await client.setSequencePool({ sequenceId: pick, poolId: created.id });
+      }
+    }
+  }
+
+  finish(`Pool "${name}" created with ${chosen.length} number(s).`);
+  return 0;
+}
+
+export async function poolsMain(
+  rest: string[],
+  flags: CliFlags,
+  json: boolean,
+  root: string = process.cwd(),
+): Promise<number> {
+  const action = rest[0];
+
+  // Usage needs no session; the wizard does, so `clientFromSession` is the
+  // login gate and its message names `blaster login`.
+  if (action === "help") {
+    console.log(POOLS_USAGE);
+    return 0;
+  }
+  if (action === undefined) {
+    if (!isInteractive(json)) {
+      console.log(POOLS_USAGE);
+      return 0;
+    }
+    const client = await liveClient(flags, json, root);
+    if (typeof client === "number") return client;
+    try {
+      return await poolsWizard(client, flags, json);
+    } catch (error) {
+      return report(error, json);
+    }
+  }
+
+  const client = await liveClient(flags, json, root);
+  if (typeof client === "number") return client;
+
+  try {
+    switch (action) {
+      case "list":
+      case "ls": {
+        const pools = await client.listPools();
+        console.log(json ? asJson({ count: pools.length, pools }) : formatPoolList(pools));
+        return 0;
+      }
+
+      case "show": {
+        const id = rest[1];
+        if (!id) {
+          console.error(`blaster pools show needs a pool id\n${POOLS_USAGE}`);
+          return 1;
+        }
+        const pool = await client.getPool(id);
+        if (!pool) {
+          console.error(`blaster pools: unknown pool ${id}`);
+          return 1;
+        }
+        console.log(json ? asJson(pool) : formatPool(pool));
+        return 0;
+      }
+
+      case "create":
+      case "new": {
+        const name = text(flags.get("name")) ?? rest[1];
+        if (!name) {
+          console.error(`blaster pools create: --name is required\n${POOLS_USAGE}`);
+          return 1;
+        }
+        const spacing = text(flags.get("min-spacing"));
+        const dailyCap = text(flags.get("daily-cap"));
+        const created = await client.createPool({
+          name,
+          ...(spacing === undefined ? {} : { minSpacingMs: Number(spacing) }),
+          ...(dailyCap === undefined ? {} : { dailyCapPerNumber: Number(dailyCap) }),
+        });
+        console.log(json ? asJson(created) : `Created pool ${created.id}.`);
+        return 0;
+      }
+
+      case "add-number": {
+        const poolId = text(flags.get("pool"));
+        const phoneNumber = text(flags.get("number"));
+        if (!poolId || !phoneNumber) {
+          console.error(`blaster pools add-number: --pool and --number are required\n${POOLS_USAGE}`);
+          return 1;
+        }
+        const orderRaw = text(flags.get("order"));
+        const pool = await client.addPoolNumber({
+          poolId,
+          phoneNumber,
+          ...(orderRaw === undefined ? {} : { order: Number(orderRaw) }),
+        });
+        console.log(json ? asJson(pool) : formatPool(pool));
+        return 0;
+      }
+
+      case "remove-number":
+      case "rm-number": {
+        const poolId = text(flags.get("pool"));
+        const phoneNumber = text(flags.get("number"));
+        if (!poolId || !phoneNumber) {
+          console.error(`blaster pools remove-number: --pool and --number are required\n${POOLS_USAGE}`);
+          return 1;
+        }
+        const pool = await client.removePoolNumber({ poolId, phoneNumber });
+        console.log(json ? asJson(pool) : formatPool(pool));
+        return 0;
+      }
+
+      case "reorder": {
+        const poolId = text(flags.get("pool"));
+        const orderRaw = text(flags.get("order"));
+        if (!poolId || !orderRaw) {
+          console.error(`blaster pools reorder: --pool and --order are required\n${POOLS_USAGE}`);
+          return 1;
+        }
+        const order = orderRaw.split(",").map((item) => item.trim()).filter(Boolean);
+        const pool = await client.reorderPoolNumbers({ poolId, order });
+        console.log(json ? asJson(pool) : formatPool(pool));
+        return 0;
+      }
+
+      case "assign": {
+        const sequenceId = text(flags.get("sequence"));
+        if (!sequenceId) {
+          console.error(`blaster pools assign: --sequence is required\n${POOLS_USAGE}`);
+          return 1;
+        }
+        const poolId = text(flags.get("pool"));
+        const result = await client.setSequencePool({
+          sequenceId,
+          ...(poolId === undefined ? {} : { poolId }),
+        });
+        console.log(
+          json
+            ? asJson(result)
+            : poolId
+              ? `Assigned pool ${poolId} to sequence ${sequenceId}.`
+              : `Cleared the pool assignment on sequence ${sequenceId}.`,
+        );
+        return 0;
+      }
+
+      default: {
+        console.error(`blaster pools: unknown action "${action}"\n${POOLS_USAGE}`);
+        return 1;
+      }
+    }
+  } catch (error) {
+    return report(error, json);
+  }
+}

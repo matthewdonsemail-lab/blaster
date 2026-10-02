@@ -33,6 +33,12 @@ importers:
       convex:
         specifier: ^1.46.0
         version: 1.46.0(react@18.3.1)
+      convex-helpers:
+        specifier: ^0.1.124
+        version: 0.1.124(@standard-schema/spec@1.1.0)(convex@1.46.0(react@18.3.1))(hono@4.13.9)(react@18.3.1)(typescript@5.6.3)(zod@4.6.5)
+      convex-test:
+        specifier: ^0.0.60
+        version: 0.0.60(convex@1.46.0(react@18.3.1))
       esbuild:
         specifier: 0.28.1
         version: 0.28.1
@@ -60,12 +66,6 @@ importers:
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.20.4)
-
-  .tmp-areacodes:
-    dependencies:
-      areacodes:
-        specifier: ^0.2.1
-        version: 0.2.1
 
   apps/api:
     dependencies:
@@ -1533,6 +1533,11 @@ packages:
         optional: true
       zod:
         optional: true
+
+  convex-test@0.0.60:
+    resolution: {integrity: sha512-qCAFx+CO6bmpXNc9s1jZvw8NJPS4yM074ib87PUY675FsiaRRW4ALotEB+RbVCYDRMYxh623KMnYZBlrMJIv1Q==}
+    peerDependencies:
+      convex: ^1.43.0
 
   convex@1.46.0:
     resolution: {integrity: sha512-dhBwDQTZDOhi5SUGAX17EWNehCdNq6/UFrSL0eLZuGfMkdsQbCVWVRZCzbZ5CF+/pgvoGxtApbEoTSipqL4JTw==}
@@ -3605,6 +3610,10 @@ snapshots:
       react: 18.3.1
       typescript: 5.6.3
       zod: 4.6.5
+
+  convex-test@0.0.60(convex@1.46.0(react@18.3.1)):
+    dependencies:
+      convex: 1.46.0(react@18.3.1)
 
   convex@1.46.0(react@18.3.1):
     dependencies:

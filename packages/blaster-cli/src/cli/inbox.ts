@@ -16,6 +16,7 @@ import {
   createBlasterApiClient,
   type BlasterApiClient,
   type ConversationMessageRow,
+  type ConversationPersonRow,
   type ConversationSummary,
 } from "@blaster/core";
 import { ensureLiveSession, loadHome } from "./login.ts";
@@ -29,6 +30,7 @@ export const INBOX_USAGE = `Usage: blaster inbox list|show
 Options
   --number <e164>               Only threads for this sending number
   --campaign <id>               Only threads in this campaign (resolves it, so slower)
+  --person                      One row per person, folding that person's pool numbers together
   --limit <n>                   Page size (max 200)
   --api-url <url>               The API to read, defaulting to the signed-in one
   --json                       Machine-readable output
@@ -112,6 +114,24 @@ export function formatConversationList(rows: ConversationSummary[]): string {
   return [header.join(" "), ...lines.map((l) => "  " + l)].join("\n");
 }
 
+/**
+ * The grouped list, one row per person.
+ *
+ * A person reached from several pool numbers has one row listing the numbers,
+ * not one row per number. The row's campaign is the union of the threads'
+ * campaigns; `multiple` is shown as a count rather than re-resolved here.
+ */
+export function formatPersonList(rows: ConversationPersonRow[]): string {
+  if (rows.length === 0) return "No conversations yet. Inbound messages appear here once the webhook stores one.";
+  const numberWidth = Math.max(7, ...rows.map((row) => row.blasterNumbers.join(", ").length)) + 2;
+  const header = `PERSON  ${"NUMBERS".padEnd(numberWidth)}  MESSAGES  LAST`;
+  const lines = rows.map((row) => {
+    const campaignNote = row.campaignGroup === "multiple" ? `  [${row.candidateCampaignIds?.length ?? "?"} campaigns]` : "";
+    return `  ${row.phoneNumber}  ${row.blasterNumbers.join(", ").padEnd(numberWidth)}  ${String(row.messageCount).padStart(9)}  ${when(row.latestMessageAt)}${campaignNote}`;
+  });
+  return [header, ...lines].join("\n");
+}
+
 export function formatThread(rows: ConversationMessageRow[]): string {
   if (rows.length === 0) return "This conversation has no messages.";
   return rows
@@ -135,12 +155,19 @@ export async function inboxList(
   const limit = typeof limitRaw === "string" ? Math.min(Math.max(Number(limitRaw) || DEFAULT_LIMIT, 1), MAX_LIMIT) : DEFAULT_LIMIT;
   const number = flags.get("number");
   const campaign = flags.get("campaign");
+  const person = flags.get("person") === true;
   try {
-    const rows = await client.listConversations({
+    const query = {
       limit,
       ...(typeof number === "string" ? { number } : {}),
       ...(typeof campaign === "string" ? { campaign } : {}),
-    });
+    };
+    if (person) {
+      const rows = await client.listConversationPersons(query);
+      console.log(json ? asJson({ count: rows.length, persons: rows }) : formatPersonList(rows));
+      return 0;
+    }
+    const rows = await client.listConversations(query);
     console.log(json ? asJson({ count: rows.length, conversations: rows }) : formatConversationList(rows));
     return 0;
   } catch (error) {

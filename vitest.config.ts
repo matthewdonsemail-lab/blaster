@@ -5,7 +5,16 @@ export default defineConfig({
     // apps/*/test exists for the Hono surface: the API owns the OAuth
     // provider's construction (including the auth-guard credentials), and a
     // wiring bug there is invisible to a core-only test.
-    include: ["packages/*/test/**/*.test.ts", "apps/*/test/**/*.test.ts"],
+    //
+    // convex/test exists for the Convex functions: the defects that have
+    // actually shipped in this work live in mutations and queries, not in pure
+    // helpers, and only an integration test against a real Convex runtime can
+    // see them. See convex/test/README.md.
+    include: [
+      "packages/*/test/**/*.test.ts",
+      "apps/*/test/**/*.test.ts",
+      "convex/test/**/*.test.ts",
+    ],
     environment: "node",
     // Those route tests spend nearly all of their time in
     // `await import("../src/index.ts")` — building the whole Hono app and the
@@ -16,5 +25,10 @@ export default defineConfig({
     // transform and import time, not a latency budget: every assertion here is
     // on a response status or a body, never on how long it took.
     testTimeout: 15_000,
+    // The same suites' beforeAll/afterAll await `convexTest`'s module-load
+    // machinery — the import cost the comment above describes. The default 5s
+    // hook ceiling flaked under load the same way the test ceiling did, so it
+    // gets the same value.
+    hookTimeout: 15_000,
   },
 });

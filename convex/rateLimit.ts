@@ -38,6 +38,19 @@ export const rateLimiter = new RateLimiter(components.rateLimiter, {
   telnyxSendPerNumber: { kind: "token bucket", rate: 1, period: SECOND, capacity: 3 },
 });
 
+/**
+ * The per-number bucket's refill period, in milliseconds.
+ *
+ * Exported so the number-pool domain paces at the bucket's rate rather than at
+ * a rate that competes with it (convex/pool/utils.ts defaults `minSpacingMs` to
+ * this). The bucket admits one send per period per number, so a pool spacing
+ * shorter than this only earns a refusal from `claimSendCapacity`, and one
+ * exactly equal can sit on the refill boundary. Keeping the two derived from one
+ * value is what stops them drifting apart; the limiter stays the authority,
+ * because the runner defers when this refuses.
+ */
+export const TELNYX_PER_NUMBER_PERIOD_MS = SECOND;
+
 /** The outcome of asking for send capacity, as the runner needs to read it. */
 export interface SendCapacity {
   ok: boolean;

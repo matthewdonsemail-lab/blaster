@@ -3,12 +3,11 @@ import { v } from "convex/values";
 import {
   MAX_STEP_ATTEMPTS,
   RETRY_BACKOFF_MS,
-  dueAtForStep,
   validateDraft,
-  type SequenceStepDraft,
 } from "../../packages/core/src/pipeline/sequence/index";
 import { applySentOutcome, draftFromArgs } from "./model.js";
 import { claimSendCapacity as claimCapacity, type SendCapacity } from "../rateLimit.js";
+import { enrollArgsValidator, enrollRecipient } from "./enrollment.js";
 import {
   applyScheduleArgsValidator,
   claimStepArgsValidator,
@@ -90,63 +89,52 @@ export const setSequenceStatus = mutation({
 });
 
 /**
+ * Assign a number pool to a sequence, or clear it.
+ *
+ * This writes `sequences`, so it belongs to the sequence domain even though the
+ * thing it names lives in the pool domain. Passing no `poolId` clears the
+ * assignment and restores the fixed `fromNumber`. The pool is checked here so a
+ * sequence cannot be pointed at a pool that does not exist.
+ */
+export const setSequencePool = mutation({
+  args: {
+    sequenceId: v.id("sequences"),
+    poolId: v.optional(v.id("pools")),
+  },
+  handler: async (ctx, args) => {
+    const sequence = await ctx.db.get("sequences", args.sequenceId);
+    if (!sequence) throw new Error(`unknown sequence ${args.sequenceId}`);
+    if (args.poolId) {
+      const pool = await ctx.db.get("pools", args.poolId);
+      if (!pool) throw new Error(`unknown pool ${args.poolId}`);
+    }
+    await ctx.db.patch("sequences", args.sequenceId, { poolId: args.poolId });
+    return args.sequenceId;
+  },
+});
+
+/**
  * Enroll a prospect.
  *
  * The first step is due immediately, so enrolling does not itself schedule a
  * wait the operator did not ask for.
  */
 export const enroll = mutation({
-  args: {
-    sequenceId: v.id("sequences"),
-    recipientId: v.string(),
-    to: v.optional(v.string()),
-    country: v.optional(v.string()),
-    /**
-     * The workspace member responsible for this enrollment, taken from the
-     * operator's actor at enroll time. Inbound notifications for this
-     * enrollment go to this member; absent means nobody was signed in, and
-     * notifications fall back to all members with a key.
-     */
-    ownerMemberId: v.optional(v.string()),
-    /**
-     * The prospect's do-not-contact flag as the caller read it from Twenty.
-     * The runner cannot ask Twenty itself, so this snapshot is what it
-     * enforces; a flag raised later arrives via the inbound opt-out path.
-     */
-    doNotContact: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const sequence = await ctx.db.get("sequences", args.sequenceId);
-    if (!sequence) throw new Error(`unknown sequence ${args.sequenceId}`);
-    if (sequence.status !== "active") {
-      throw new Error(`sequence ${args.sequenceId} is ${sequence.status}, so nothing can be enrolled`);
-    }
+  args: enrollArgsValidator,
+  handler: async (ctx, args) => enrollRecipient(ctx, args),
+});
 
-    // The steps of one sequence, which enrollment copies into the enrollment's
-    // own snapshot. The set is bounded by that sequence's own step count.
-    // eslint-disable-next-line @convex-dev/no-collect-in-query
-    const steps = await ctx.db
-      .query("sequenceSteps")
-      .withIndex("sequenceId", (q) => q.eq("sequenceId", args.sequenceId))
-      .collect();
-    const ordered: SequenceStepDraft[] = steps
-      .sort((a, b) => a.order - b.order)
-      .map(({ text, delayHours, isStop }) => ({ text, delayHours, isStop }));
-
-    const enrolledAt = Date.now();
-    return ctx.db.insert("sequenceEnrollments", {
-      sequenceId: args.sequenceId,
-      recipientId: args.recipientId,
-      to: args.to,
-      country: args.country,
-      ...(args.ownerMemberId ? { ownerMemberId: args.ownerMemberId } : {}),
-      cursor: 0,
-      status: "active",
-      enrolledAt,
-      doNotContact: args.doNotContact ?? false,
-      nextDueAt: dueAtForStep(ordered, 0, enrolledAt) ?? undefined,
-    });
-  },
+/**
+ * Enroll one prospect from inside the backend.
+ *
+ * The same write as `enroll`, reached by the Twenty enroll seam (an action has
+ * no `ctx.db`) and by any future internal caller. Internal because the seam must
+ * not call a client-reachable function (rule R8), and because a batch enroll is
+ * not something a client should trigger one row at a time.
+ */
+export const enrollInternal = internalMutation({
+  args: enrollArgsValidator,
+  handler: async (ctx, args) => enrollRecipient(ctx, args),
 });
 
 /**

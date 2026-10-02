@@ -46,6 +46,28 @@ export interface ConversationMessageRow {
   media: Array<{ url: string; contentType?: string; size?: number }> | null;
 }
 
+/**
+ * One person row in the grouped inbox: the read-shape decision of
+ * `.scratch/reliable-pooled-outbound/issues/02-thread-identity.md`.
+ *
+ * The per-number threads stay the storage model; this folds their summaries
+ * into one row per person. The campaign is the union of the person's
+ * threads' campaigns, reported as `multiple` when they differ.
+ */
+export interface ConversationPersonRow {
+  phoneNumber: string;
+  /** The pool numbers this person was reached from, sorted. */
+  blasterNumbers: string[];
+  /** The per-number threads that fold into this row. */
+  conversationIds: string[];
+  latestMessageAt: number;
+  /** The messages across all of this person's threads. */
+  messageCount: number;
+  campaignId: string | null;
+  campaignGroup: CampaignGroup;
+  candidateCampaignIds?: string[];
+}
+
 export interface ListConversationsQuery {
   limit?: number;
   /** Only threads for this sending number, E.164. */
@@ -53,6 +75,8 @@ export interface ListConversationsQuery {
   /** Only threads in this campaign. Resolves the campaign, so it costs more. */
   campaign?: string;
   withCampaign?: boolean;
+  /** Fold the rows into one per person: the inbox's grouped view. */
+  groupBy?: "person";
 }
 
 /** What the provider said about a message we just handed it. */
@@ -191,6 +215,104 @@ export interface BatchSendResult {
   skipped: number;
   failed: number;
   outcomes: RecipientOutcome[];
+}
+
+/** One pool of sending numbers, as `/api/pools` returns it. */
+export interface PoolSummary {
+  id: string;
+  name: string;
+  status: "active" | "paused";
+  strategy: string;
+  /** The `order` of the member most recently used. */
+  cursor: number;
+  minSpacingMs: number;
+  dailyCapPerNumber: number;
+  /** How many members can currently send. */
+  activeNumberCount: number;
+  /** Earliest instant the pool could next send. */
+  nextAvailableAt: number;
+  lastDispatchedAt: number | null;
+  createdAt: number;
+}
+
+/** One number's membership in a pool, with its live rate state. */
+export interface PoolNumberRow {
+  phoneNumberId: string;
+  phoneNumber: string;
+  order: number;
+  status: "active" | "paused" | "removed";
+  sentToday: number;
+  nextAvailableAt: number;
+  lastSentAt: number | null;
+  assignedAt: number;
+  removedAt: number | null;
+}
+
+/** A pool with its memberships, as `/api/pools/:id` returns it. */
+export interface PoolDetail extends PoolSummary {
+  numbers: PoolNumberRow[];
+}
+
+export interface CreatePoolInput {
+  name: string;
+  minSpacingMs?: number;
+  dailyCapPerNumber?: number;
+}
+
+export interface AddPoolNumberInput {
+  poolId: string;
+  phoneNumber: string;
+  order?: number;
+}
+
+export interface RemovePoolNumberInput {
+  poolId: string;
+  phoneNumber: string;
+}
+
+export interface ReorderPoolNumbersInput {
+  poolId: string;
+  /** E.164 numbers, in the order the pool should work them. */
+  order: string[];
+}
+
+export interface SetSequencePoolInput {
+  sequenceId: string;
+  /** Omit to clear the assignment and fall back to the fixed `fromNumber`. */
+  poolId?: string;
+}
+
+/** A sequence, as `/api/sequences` returns it, for a pool-assignment picker. */
+export interface SequenceOption {
+  id: string;
+  name: string;
+  status: string;
+  /** The pool already assigned, when there is one. */
+  poolId: string | null;
+}
+
+/** One durable per-person suppression, as `/api/suppressions` returns it. */
+export interface SuppressionRow {
+  peer: string;
+  reason?: string;
+  source: "inbound-opt-out" | "manual";
+  createdAt: number;
+}
+
+/** One prospect's outcome inside an enroll run. Never a bare boolean. */
+export interface EnrollOutcome {
+  prospectId: string;
+  phone: string | null;
+  status: "enrolled" | "skipped";
+  detail: string | null;
+}
+
+/** The whole of an enroll run: every prospect accounted for. */
+export interface EnrollResult {
+  total: number;
+  enrolled: number;
+  skipped: number;
+  outcomes: EnrollOutcome[];
 }
 
 /**

@@ -197,6 +197,14 @@ client-reachable, so a future change to a public function's exposure cannot
 silently widen what the backend itself can invoke. The framework's own
 best-practices page recommends the same split. ([Best practices](https://docs.convex.dev/understanding/best-practices/))
 
+One documented exception: the deployment's own HTTP router (`convex/http.ts`
+and the `convex/http/` domain groups) reaches the public functions it serves
+through `api.*`. The router is itself the public surface of a Convex
+deployment — a site with no Hono in front still answers on it — and its
+handlers exist to call those public functions. The convention is still
+enforced everywhere else in the tree; `check:convex` exempts the `http/`
+directory only.
+
 ### R9. No function re-exports through barrels
 Do not use barrel files to re-export Convex functions. Convex discovers
 exported functions by module path (F3), so re-exporting functions can create
@@ -292,10 +300,11 @@ never written.
 The `check:convex` gate enforces exactly the R-rules that are objectively
 checkable without understanding intent:
 
-- every filename under `convex/` (outside `_generated/`, any extension) is
-  camelCase or a single lowercase word (R1); only `convex.config.ts` is matched
-  by exact name, and only at the root (`schema.ts`, `http.ts`, and `crons.ts`
-  pass the casing rule on their own and need no exemption);
+- every filename under `convex/` (outside `_generated/`, `test/`, any
+  extension) is camelCase or a single lowercase word (R1); only
+  `convex.config.ts` is matched by exact name, and only at the root (`schema.ts`,
+  `http.ts`, and `crons.ts` pass the casing rule on their own and need no
+  exemption);
 - every directory name under `convex/` (outside `_generated/`) follows the same
   rule (R1);
 - table, field, and index names are **not** checked (R2/R3 are documented
@@ -305,9 +314,7 @@ checkable without understanding intent:
 - a root `http.ts`, when present, default-exports the router; a root
   `crons.ts`, when present, builds its schedule with `cronJobs()`;
 - no `export *` in any `convex/` file (R9, R12 — the duplicate-address hazard);
-- no `api.*` function references inside `convex/` (R8);
-- every domain directory has an `index.ts` that re-exports no function module
-  (R12).
+- no `api.*` function references inside `convex/` (R8).
 
 Content checks run against code with comments and string literals stripped, so
 a commented-out line or a mention in a string neither flags nor hides a real

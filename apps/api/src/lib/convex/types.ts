@@ -8,9 +8,13 @@
 export type {
   ConversationQuery,
   ConversationRow,
+  EnrollOutcome,
   InboundRecordInput,
   InboundRecordResult,
+  LedgerNumber,
   MessageRow,
+  PoolResult,
   ReadResult,
   StatusResult,
+  SuppressionRow,
 } from "./helpers/client.ts";

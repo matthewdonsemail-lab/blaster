@@ -58,6 +58,21 @@ import {
 import { TelnyxError, listMessagingProfiles, sendMessage } from "./lib/telnyx/messaging/index.ts";
 import { readBreakdownFrom, twentyReader } from "./lib/pipeline/breakdown/index.ts";
 import { applyOutboundStatus, conversationMessages, listConversations, recordInboundMessage } from "./lib/convex/index.ts";
+import {
+  addPoolNumber,
+  createPool,
+  enrollRecipients,
+  getPool,
+  listLedgerNumbers,
+  listPools,
+  listSequences,
+  getSequenceById,
+  listSuppressions,
+  removePoolNumber,
+  reorderPoolNumbers,
+  setSequencePool,
+  setSuppression,
+} from "./lib/convex/index.ts";
 import { requireOperator, resolveOperatorActor } from "./lib/auth/operator/index.ts";
 import { broadcastReply, classifyMessageRules } from "@blaster/core";
 import {
@@ -209,6 +224,10 @@ const inbox = new Hono();
 
 inbox.get("/conversations", requireOperator, async (c) => {
   const limit = Number(c.req.query("limit") ?? "") || undefined;
+  const groupBy = c.req.query("groupBy");
+  if (groupBy !== undefined && groupBy !== "person") {
+    return c.json({ error: "Unsupported groupBy: expected person" }, 400);
+  }
   const result = await listConversations({
     ...(limit ? { limit } : {}),
     ...(c.req.query("number") ? { number: c.req.query("number") as string } : {}),
@@ -216,6 +235,8 @@ inbox.get("/conversations", requireOperator, async (c) => {
     // The campaign costs a lookup per row, so it is only resolved when asked
     // for rather than on every list.
     withCampaign: c.req.query("campaign") !== undefined || c.req.query("withCampaign") === "true",
+    // The person fold needs the campaign union, so it forces the resolution.
+    ...(groupBy === "person" ? { groupBy: "person" as const } : {}),
   });
   if (result.status === "not-configured") {
     return c.json({ error: "CONVEX_URL is not configured" }, 503);
@@ -223,7 +244,8 @@ inbox.get("/conversations", requireOperator, async (c) => {
   if (result.status === "failed") {
     return c.json({ error: "Failed to read conversations", detail: result.error }, 502);
   }
-  return c.json({ count: result.rows.length, conversations: result.rows });
+  const payload = groupBy === "person" ? { count: result.rows.length, persons: result.rows } : { count: result.rows.length, conversations: result.rows };
+  return c.json(payload);
 });
 
 /**
@@ -533,6 +555,223 @@ inbox.post("/messages/batch-send", requireOperator, async (c) => {
 });
 
 app.route("/api", inbox);
+
+/**
+ * Number pools.
+ *
+ * Operator-gated like the inbox, because a pool names provisioned sending
+ * numbers and their rate state. The CLI and MCP reach these through the shared
+ * `createBlasterApiClient`, so all three surfaces act on the same pool state.
+ * Removing a number is a soft removal handled in Convex; this layer only
+ * validates the request and maps the Convex result onto a status code.
+ */
+const pools = new Hono();
+
+pools.get("/pools", requireOperator, async (c) => {
+  const result = await listPools();
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to list pools", detail: result.error }, 502);
+  return c.json({ count: result.value.length, pools: result.value });
+});
+
+pools.post("/pools", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    name?: unknown;
+    minSpacingMs?: unknown;
+    dailyCapPerNumber?: unknown;
+  } | null;
+  if (!body || typeof body.name !== "string" || body.name.trim() === "") {
+    return c.json({ error: "name is required" }, 400);
+  }
+  const result = await createPool({
+    name: body.name,
+    ...(typeof body.minSpacingMs === "number" ? { minSpacingMs: body.minSpacingMs } : {}),
+    ...(typeof body.dailyCapPerNumber === "number" ? { dailyCapPerNumber: body.dailyCapPerNumber } : {}),
+  });
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to create the pool", detail: result.error }, 502);
+  return c.json(result.value, 201);
+});
+
+pools.get("/pools/:id", requireOperator, async (c) => {
+  const result = await getPool(c.req.param("id"));
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to read the pool", detail: result.error }, 502);
+  if (!result.value) return c.json({ error: "Unknown pool" }, 404);
+  return c.json(result.value);
+});
+
+pools.post("/pools/:id/numbers", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    phoneNumber?: unknown;
+    order?: unknown;
+  } | null;
+  if (!body || typeof body.phoneNumber !== "string" || body.phoneNumber.trim() === "") {
+    return c.json({ error: "phoneNumber is required" }, 400);
+  }
+  const result = await addPoolNumber(
+    c.req.param("id"),
+    body.phoneNumber,
+    typeof body.order === "number" ? body.order : undefined,
+  );
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to add the number", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+pools.delete("/pools/:id/numbers/:phoneNumber", requireOperator, async (c) => {
+  const result = await removePoolNumber(c.req.param("id"), c.req.param("phoneNumber"));
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") {
+    const clientMistake = /not in pool|unknown/i.test(result.error);
+    return c.json(
+      { error: clientMistake ? "That number is not in the pool" : "Failed to remove the number", detail: result.error },
+      clientMistake ? 404 : 502,
+    );
+  }
+  return c.json(result.value);
+});
+
+pools.put("/pools/:id/numbers", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { order?: unknown } | null;
+  if (!body || !Array.isArray(body.order) || body.order.some((item) => typeof item !== "string")) {
+    return c.json({ error: "order must be an array of E.164 numbers" }, 400);
+  }
+  const result = await reorderPoolNumbers(c.req.param("id"), body.order as string[]);
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to reorder the pool", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+/**
+ * Sequences, for the pool wizard's "assign to a sequence" step.
+ *
+ * Read-only and operator-gated like the rest of this sub-app. The runner and the
+ * sequence builder read sequences directly from Convex; this route exists only
+ * so the CLI and MCP can list them through the shared client.
+ */
+pools.get("/sequences", requireOperator, async (c) => {
+  const result = await listSequences();
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to list sequences", detail: result.error }, 502);
+  return c.json({ count: result.value.length, sequences: result.value });
+});
+
+pools.get("/sequences/:id", requireOperator, async (c) => {
+  const result = await getSequenceById(c.req.param("id"));
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to read the sequence", detail: result.error }, 502);
+  if (result.value === null) return c.json({ error: "Unknown sequence" }, 404);
+  return c.json(result.value);
+});
+
+/**
+ * Assign a pool to a sequence, or clear it.
+ *
+ * An absent `poolId` clears the assignment and restores the sequence's fixed
+ * `fromNumber`; that is the one way to undo a pool assignment.
+ */
+pools.post("/sequences/:id/pool", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { poolId?: unknown } | null;
+  const result = await setSequencePool(
+    c.req.param("id"),
+    typeof body?.poolId === "string" && body.poolId !== "" ? body.poolId : undefined,
+  );
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to assign the pool", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+app.route("/api", pools);
+
+/**
+ * Suppressions: the durable per-person do-not-contact list.
+ *
+ * A STOP is a fact about the person, so it holds across every sequence and every
+ * pool number. Operator-gated like the pools, because a row here stops outbound
+ * contact for a real person. The list is read-only here; a suppression is
+ * written by the inbound webhook, and lifted by an explicit human action.
+ */
+const suppressions = new Hono();
+
+suppressions.get("/suppressions", requireOperator, async (c) => {
+  const result = await listSuppressions();
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to list suppressions", detail: result.error }, 502);
+  return c.json({ count: result.rows.length, suppressions: result.rows });
+});
+
+/**
+ * Suppress a peer by hand, or lift a suppression.
+ *
+ * `POST { peer, suppressed: false }` lifts. Lifting is deliberately explicit:
+ * nothing in the inbound path can do it, so a START message cannot reopen
+ * contact on its own.
+ */
+suppressions.post("/suppressions", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    peer?: unknown;
+    suppressed?: unknown;
+    reason?: unknown;
+  } | null;
+  if (!body || typeof body.peer !== "string" || body.peer.trim() === "") {
+    return c.json({ error: "peer is required" }, 400);
+  }
+  if (typeof body.suppressed !== "boolean") {
+    return c.json({ error: "suppressed must be true (suppress) or false (lift)" }, 400);
+  }
+  const result = await setSuppression(
+    body.peer,
+    body.suppressed,
+    typeof body.reason === "string" ? body.reason : undefined,
+  );
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to update the suppression", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+app.route("/api", suppressions);
+
+/**
+ * Enroll prospects into a sequence straight from Twenty.
+ *
+ * The same filter DSL the batch send uses, applied to `agencyProspects` on the
+ * Convex side, which is where the Twenty credentials live and therefore where
+ * the walk happens. The caller passes validated filter definitions; Convex
+ * re-validates with the shared menu before touching Twenty.
+ */
+const enroll = new Hono();
+
+enroll.post("/sequences/:id/enroll", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    filters?: unknown;
+    ownerMemberId?: unknown;
+    outboundState?: unknown;
+  } | null;
+  const validated = validateProspectFilters(body?.filters);
+  if ("problems" in validated) {
+    return c.json({ error: "Invalid prospect filters", problems: validated.problems }, 400);
+  }
+  // The filters are already validated here; the seam re-validates with the same
+  // shared menu on the Convex side. Pass the caller's raw clauses through, since
+  // a `ValidatedFilter`'s `field` is the menu entry object, not its name, and the
+  // seam takes the raw `{ field, operator, value }` shape.
+  const result = await enrollRecipients({
+    sequenceId: c.req.param("id"),
+    filters: (Array.isArray(body?.filters) ? body.filters : []) as Array<{
+      field: string;
+      operator: string;
+      value?: string | number | boolean | string[];
+    }>,
+    ...(typeof body?.ownerMemberId === "string" ? { ownerMemberId: body.ownerMemberId } : {}),
+    ...(typeof body?.outboundState === "string" ? { outboundState: body.outboundState } : {}),
+  });
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to enroll recipients", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+app.route("/api", enroll);
 
 /** The environment manifest, with each variable's configured state. */
 app.get("/api/env", (c) => {
@@ -1058,7 +1297,13 @@ async function ownedSources(): Promise<OwnershipSources> {
           .then((rows) => rows.map(fromAgencyPhoneRecord))
           .catch(() => null)
       : null;
-  const sources: OwnershipSources = { telnyx, twenty };
+  // The Convex purchase ledger is the third registry. It can be ahead of the
+  // other two for a number bought through the backend, or added to a pool before
+  // a sync, and a reply to a number owned only here would otherwise be refused
+  // as not-owned and dropped.
+  const ledger = await listLedgerNumbers();
+  const convex = ledger.status === "ok" ? ledger.rows : null;
+  const sources: OwnershipSources = { telnyx, twenty, convex };
   ownershipCache = { at: Date.now(), sources };
   return sources;
 }

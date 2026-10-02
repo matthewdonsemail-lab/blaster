@@ -1,5 +1,6 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server.js";
 import type { Doc, Id } from "../_generated/dataModel.js";
+import { poolContainsNumber } from "../pool/helpers.js";
 import {
   conversationPairKey,
   normalizePhoneNumber,
@@ -77,7 +78,15 @@ export async function campaignFor(
     // matched to a conversation, and a stopped sequence is not sending now.
     if (enrollment.to !== peerNumber || enrollment.status === "opted-out") continue;
     const sequence = await ctx.db.get("sequences", enrollment.sequenceId);
-    if (!sequence || sequence.fromNumber !== blasterNumber) continue;
+    if (!sequence) continue;
+    // A sequence sends from its fixed `fromNumber`, or, when a pool is assigned,
+    // from whichever number the pool chose. Matching on `fromNumber` alone would
+    // leave every pool-backed thread `unassigned`, so a pool sequence also
+    // matches when the thread's blaster number is a member of its pool.
+    const usesNumber =
+      sequence.fromNumber === blasterNumber ||
+      (sequence.poolId ? await poolContainsNumber(ctx, sequence.poolId, blasterNumber) : false);
+    if (!usesNumber) continue;
     if (!sequence.campaignId) continue;
     matches.push({
       campaignId: sequence.campaignId,
@@ -91,6 +100,87 @@ export async function campaignFor(
   if (campaigns.length > 1) return { kind: "multiple", campaigns: campaigns.sort() };
   const winner = matches.reduce((best, m) => (m.rank > best.rank ? m : best));
   return { kind: "one", campaignId: winner.campaignId, sequenceId: winner.sequenceId };
+}
+
+/**
+ * One person row in the inbox: the person-level fold of `listConversations`
+ * decided in `.scratch/reliable-pooled-outbound/issues/02-thread-identity.md`.
+ *
+ * The threads stay keyed on `(peer, blasterNumber)` in storage; this only
+ * groups their summaries. A person's campaign is the union of their threads'
+ * campaigns, reporting `multiple` when they differ — the same ambiguity rule
+ * `campaignFor` applies one level down.
+ */
+export type PersonRow = {
+  phoneNumber: string;
+  blasterNumbers: string[];
+  conversationIds: string[];
+  latestMessageAt: number;
+  messageCount: number;
+  campaignId: string | null;
+  campaignGroup: CampaignGroup["kind"];
+  candidateCampaignIds?: string[];
+};
+
+/** Fold per-number thread rows into one row per person. */
+export function groupByPerson(rows: Array<{
+  phoneNumber: string;
+  blasterNumber: string;
+  id: string;
+  latestMessageAt: number;
+  messageCount: number;
+  campaignId?: string | null;
+  campaignGroup?: CampaignGroup["kind"];
+  candidateCampaignIds?: string[];
+}>): PersonRow[] {
+  interface Fold {
+    numbers: string[];
+    conversationIds: string[];
+    latestMessageAt: number;
+    messageCount: number;
+    campaigns: string[];
+    ambiguousCampaigns: string[];
+  }
+  const byPerson = new Map<string, Fold>();
+  for (const row of rows) {
+    if (!row.phoneNumber) continue;
+    const entry = byPerson.get(row.phoneNumber) ?? {
+      numbers: [],
+      conversationIds: [],
+      latestMessageAt: 0,
+      messageCount: 0,
+      campaigns: [],
+      ambiguousCampaigns: [],
+    };
+    if (!entry.numbers.includes(row.blasterNumber)) entry.numbers.push(row.blasterNumber);
+    entry.conversationIds.push(row.id);
+    entry.latestMessageAt = Math.max(entry.latestMessageAt, row.latestMessageAt);
+    entry.messageCount += row.messageCount;
+    // A thread's `multiple` is already the union of its own campaigns, so the
+    // person's union is the union of every thread's campaign set.
+    if (row.campaignGroup === "multiple") {
+      for (const id of row.candidateCampaignIds ?? []) entry.ambiguousCampaigns.push(id);
+    } else if (row.campaignGroup === "one" && row.campaignId) {
+      entry.campaigns.push(row.campaignId);
+    }
+    byPerson.set(row.phoneNumber, entry);
+  }
+  const persons: PersonRow[] = [];
+  for (const [phoneNumber, entry] of byPerson) {
+    const campaigns = [...new Set([...entry.campaigns, ...entry.ambiguousCampaigns])].sort();
+    const person: PersonRow = {
+      phoneNumber,
+      blasterNumbers: entry.numbers.slice().sort(),
+      conversationIds: entry.conversationIds,
+      latestMessageAt: entry.latestMessageAt,
+      messageCount: entry.messageCount,
+      campaignId: campaigns.length === 1 ? (campaigns[0] ?? null) : null,
+      campaignGroup: campaigns.length === 1 ? "one" : campaigns.length > 1 ? "multiple" : "unassigned",
+    };
+    if (campaigns.length > 1) person.candidateCampaignIds = campaigns;
+    persons.push(person);
+  }
+  return persons;
 }
 
 export const OUTBOUND_PREVIEW_LENGTH = 120;

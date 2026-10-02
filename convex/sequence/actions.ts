@@ -4,8 +4,9 @@ import { v } from "convex/values";
 // Aliased: `profileEnv` below builds the Telnyx SDK's own env record and this
 // handler holds it in a local `env`, which would otherwise shadow the Convex
 // one for the rest of the function.
-import { internalAction, env as convexEnv } from "../_generated/server.js";
+import { action, internalAction, env as convexEnv } from "../_generated/server.js";
 import { internal } from "../_generated/api.js";
+import type { Id } from "../_generated/dataModel.js";
 import {
   dryRunEnrollment,
   evaluateEligibility,
@@ -18,6 +19,14 @@ import {
   resolveMessagingProfile,
   sendMessage,
 } from "../../packages/core/src/telnyx/messaging/index";
+import { TwentyClient } from "../../packages/core/src/twenty/client/index";
+import {
+  filtersToDsl,
+  markProspectOutbound,
+  splitEligibility,
+  validateProspectFilters,
+  walkProspectRows,
+} from "../../packages/core/src/twenty/agencyProspect/index";
 import type { ApplyScheduleArgs, RunOutcome } from "./index.js";
 import { isScheduledStatus, profileEnv } from "./utils.js";
 
@@ -79,6 +88,48 @@ export const runEnrollmentStep = internalAction({
       return { kind: "sentinel", reason: "sequence-complete" };
     }
 
+    // Resolve the sending number before the send decision. A pool sequence takes
+    // its number from the pool, in pool order and inside each number's rate
+    // budget; a sequence with no pool keeps its fixed fromNumber. When the pool
+    // has nothing that may send now, this defers rather than claiming a step,
+    // which is what keeps the message out of the carrier's limit queue.
+    let fromNumber = sequence.fromNumber;
+    let numberProfileId: string | null = sequence.numberProfileId ?? null;
+    // The order `availableSender` proposed. It is passed back to `consumeSender`
+    // so the reservation is for the same member eligibility and the limiter were
+    // evaluated against, rather than a fresh pick that could differ.
+    let poolOrder: number | null = null;
+    if (sequence.poolId) {
+      const availability = await ctx.runQuery(internal.pool.queries.availableSender, {
+        poolId: sequence.poolId as Id<"pools">,
+        now,
+      });
+      if (!availability.sender) {
+        if (availability.soonestNextAvailableAt) {
+          await ctx.runMutation(internal.sequence.mutations.applySchedule, {
+            enrollmentId: enrollment._id,
+            status: "active",
+            nextDueAt: availability.soonestNextAvailableAt,
+            lastSkipReason: "pool-rate-limited",
+            attempts: enrollment.attempts ?? 0,
+          });
+          return { kind: "sentinel", reason: "pool-rate-limited" };
+        }
+        // No active numbers at all. Parking for a human beats retrying an empty
+        // pool forever, and it is not a silent drop: the reason is recorded.
+        await ctx.runMutation(internal.sequence.mutations.applySchedule, {
+          enrollmentId: enrollment._id,
+          status: "awaiting-human",
+          lastSkipReason: "pool-empty",
+          attempts: enrollment.attempts ?? 0,
+        });
+        return { kind: "sentinel", reason: "pool-empty" };
+      }
+      fromNumber = availability.sender.phoneNumber;
+      numberProfileId = availability.sender.messagingProfileId ?? null;
+      poolOrder = availability.sender.order;
+    }
+
     const env = profileEnv(loaded.profilePairs);
     const evaluate = (recipient: EligibilityInput) => {
       const verdict = evaluateEligibility(env, sequence.options, {
@@ -88,7 +139,7 @@ export const runEnrollmentStep = internalAction({
         doNotContact: recipient.doNotContact,
         hasReplied: recipient.hasReplied,
         sentInLastDay: recipient.sentInLastDay,
-        numberProfileId: sequence.numberProfileId ?? null,
+        numberProfileId,
       });
       return { eligible: verdict.eligible, reason: verdict.reason, detail: verdict.detail };
     };
@@ -97,7 +148,7 @@ export const runEnrollmentStep = internalAction({
       enrollmentId: enrollment._id,
       sequenceId: sequence._id,
       steps,
-      fromNumber: sequence.fromNumber,
+      fromNumber,
       recipient: {
         id: enrollment.recipientId,
         to: enrollment.to ?? null,
@@ -105,7 +156,7 @@ export const runEnrollmentStep = internalAction({
         doNotContact: enrollment.doNotContact === true,
         hasReplied: loaded.hasReplied,
         sentInLastDay: loaded.sentInLastDay,
-        numberProfileId: sequence.numberProfileId ?? null,
+        numberProfileId,
       },
       now,
       evaluate,
@@ -143,6 +194,103 @@ export const runEnrollmentStep = internalAction({
       return { kind: "sentinel", reason: decision.skipReason ?? "not-due" };
     }
 
+    // Typed, so a typo in the variable name is a build error. The guard stays
+    // even though `convexEnv.TELNYX_API_KEY` is declared required: parking the
+    // enrollment with a readable reason beats throwing an opaque error out of
+    // the runner if the deployment is ever provisioned without it.
+    const apiKey = convexEnv.TELNYX_API_KEY;
+    if (!apiKey) {
+      // Nothing was sent, so this is a definite failure rather than an unknown
+      // outcome: it parks after the retry ceiling instead of being guessed at.
+      // No claim is taken for it, so the retry ceiling is actually reachable.
+      await ctx.runMutation(internal.sequence.mutations.recordStep, {
+        enrollmentId: enrollment._id,
+        outcome: "failed",
+        steps,
+        skipReason: "missing-telnyx-api-key",
+      });
+      return { kind: "failed", retryable: false, reason: "missing-telnyx-api-key" };
+    }
+
+    const to = decision.effect.type === "send" ? decision.effect.to : enrollment.to ?? null;
+    if (!to) {
+      await ctx.runMutation(internal.sequence.mutations.recordStep, {
+        enrollmentId: enrollment._id,
+        outcome: "skipped",
+        steps,
+        skipReason: "no-number",
+      });
+      return { kind: "sentinel", reason: "no-number" };
+    }
+
+    let outcome: RunOutcome;
+    // The profile the eligibility check already accepted, resolved the same way
+    // rather than by a second independent decision. `consumeSender` reserves the
+    // same order this was resolved for, so this is the profile on the wire.
+    let profile = resolveMessagingProfile(env, {
+      to,
+      recipientCountry: enrollment.country ?? null,
+      numberProfileId,
+    });
+
+    // Capacity is claimed once the send is certain to be attempted: the number,
+    // the profile and the eligibility decision all say yes. It is claimed for
+    // `fromNumber`, the pool's chosen number when a pool is assigned, so the
+    // account ceiling and the per-number bucket in convex/rateLimit.ts gate the
+    // pool path exactly as they gate a fixed-number sequence.
+    //
+    // Claimed BEFORE `claimStep`, because a claim taken here would be permanent
+    // (sequenceSendClaims rows are never deleted) and a capacity refusal would
+    // then strand the step as already-claimed forever. Deferring with no claim
+    // held is what lets the step be retried.
+    const capacity = await ctx.runMutation(internal.sequence.mutations.claimSendCapacity, {
+      fromNumber,
+    });
+    if (!capacity.ok) {
+      await ctx.runMutation(internal.sequence.mutations.applySchedule, {
+        enrollmentId: enrollment._id,
+        status: "active",
+        nextDueAt: capacity.retryAfter ?? now + 60_000,
+        lastSkipReason: "send-capacity-exhausted",
+        attempts: enrollment.attempts ?? 0,
+      });
+      return { kind: "sentinel", reason: "send-capacity-exhausted" };
+    }
+
+    // Reserve the pool's own pacing budget only now that the provider call is
+    // certain to be attempted, so a limiter refusal above never costs a number an
+    // allowance. The pool picks WHICH number sends; the rate limiter above is
+    // what decides WHETHER it may, so the two do not compete: the pool paces,
+    // the limiter admits. Losing the reservation here is rare (another runner
+    // took the last slot); the answer is still to defer, never to send unpaced.
+    if (sequence.poolId && poolOrder !== null) {
+      const reserved = await ctx.runMutation(internal.pool.mutations.consumeSender, {
+        poolId: sequence.poolId as Id<"pools">,
+        order: poolOrder,
+        now,
+      });
+      if (!reserved.sender) {
+        await ctx.runMutation(internal.sequence.mutations.applySchedule, {
+          enrollmentId: enrollment._id,
+          status: "active",
+          nextDueAt: reserved.soonestNextAvailableAt ?? now + 60_000,
+          lastSkipReason: "pool-rate-limited",
+          attempts: enrollment.attempts ?? 0,
+        });
+        return { kind: "sentinel", reason: "pool-rate-limited" };
+      }
+      fromNumber = reserved.sender.phoneNumber;
+      numberProfileId = reserved.sender.messagingProfileId ?? null;
+      profile = resolveMessagingProfile(env, {
+        to,
+        recipientCountry: enrollment.country ?? null,
+        numberProfileId,
+      });
+    }
+
+    // Claim the step last, immediately before the provider call. Claim-before-send
+    // is what stops a duplicate send; taking the claim after every deferral is
+    // what makes a deferral retryable, because a claim is never released.
     const claim = await ctx.runMutation(internal.sequence.mutations.claimStep, {
       enrollmentId: enrollment._id,
       cursor: enrollment.cursor,
@@ -174,68 +322,10 @@ export const runEnrollmentStep = internalAction({
       return { kind: "sentinel", reason: "replied-before-send" };
     }
 
-    // Typed, so a typo in the variable name is a build error. The guard stays
-    // even though `convexEnv.TELNYX_API_KEY` is declared required: parking the
-    // enrollment with a readable reason beats throwing an opaque error out of
-    // the runner if the deployment is ever provisioned without it.
-    const apiKey = convexEnv.TELNYX_API_KEY;
-    if (!apiKey) {
-      // Nothing was sent, so this is a definite failure rather than an unknown
-      // outcome: it parks after the retry ceiling instead of being guessed at.
-      await ctx.runMutation(internal.sequence.mutations.recordStep, {
-        enrollmentId: enrollment._id,
-        outcome: "failed",
-        steps,
-        skipReason: "missing-telnyx-api-key",
-      });
-      return { kind: "failed", retryable: false, reason: "missing-telnyx-api-key" };
-    }
-
-    const to = decision.effect.type === "send" ? decision.effect.to : enrollment.to ?? null;
-    if (!to) {
-      await ctx.runMutation(internal.sequence.mutations.recordStep, {
-        enrollmentId: enrollment._id,
-        outcome: "skipped",
-        steps,
-        skipReason: "no-number",
-      });
-      return { kind: "sentinel", reason: "no-number" };
-    }
-
-    let outcome: RunOutcome;
-    // The profile the eligibility check already accepted, resolved the same way
-    // rather than by a second independent decision.
-    const profile = resolveMessagingProfile(env, {
-      to,
-      recipientCountry: enrollment.country ?? null,
-      numberProfileId: sequence.numberProfileId ?? null,
-    });
-
-    // Capacity is claimed only once the send is certain to be attempted: after
-    // the number, the profile and the eligibility decision all say yes, and
-    // immediately before the provider call. Claiming earlier would spend tokens
-    // on sends that never happen.
-    const capacity = await ctx.runMutation(internal.sequence.mutations.claimSendCapacity, {
-      fromNumber: sequence.fromNumber,
-    });
-    if (!capacity.ok) {
-      // A skip, not a failure: the step is still owed and `recordStep` leaves the
-      // cursor alone, so the enrollment stays due and the next tick tries again
-      // once capacity has recovered. Failing it instead would park the
-      // enrollment for a human over a limit we set ourselves.
-      await ctx.runMutation(internal.sequence.mutations.recordStep, {
-        enrollmentId: enrollment._id,
-        outcome: "skipped",
-        steps,
-        skipReason: "send-capacity-exhausted",
-      });
-      return { kind: "sentinel", reason: "send-capacity-exhausted" };
-    }
-
     try {
       const sent = await sendMessage({
         apiKey,
-        from: sequence.fromNumber,
+        from: fromNumber,
         to,
         text: step.text,
         messagingProfileId: profile.profileId ?? "",
@@ -257,7 +347,7 @@ export const runEnrollmentStep = internalAction({
         steps,
         message: {
           to,
-          from: sequence.fromNumber,
+          from: fromNumber,
           text: step.text,
           telnyxMessageId: outcome.messageId,
           sentAt: now,
@@ -326,5 +416,138 @@ export const runDueEnrollments = internalAction({
       results.push({ enrollmentId, outcome });
     }
     return { now, considered: ids.length, results };
+  },
+});
+
+/** The two Twenty credentials the enroll seam needs, read from the deployment. */
+function twentyEnv(): { baseUrl: string; apiKey: string } | null {
+  const baseUrl = convexEnv.TWENTY_BASE_URL;
+  const apiKey = convexEnv.TWENTY_API_KEY;
+  if (!baseUrl || !apiKey) return null;
+  return { baseUrl, apiKey };
+}
+
+/** A Twenty client built from the deployment's environment, or thrown. */
+function twentyClient(env: { baseUrl: string; apiKey: string }): TwentyClient {
+  return new TwentyClient({ baseUrl: env.baseUrl.replace(/\/+$/, ""), apiKey: env.apiKey });
+}
+
+/**
+ * Enroll prospects straight from Twenty, reusing the same filter DSL the batch
+ * send uses.
+ *
+ * The enrollment targets exactly what `blaster send` targets: the caller passes
+ * the same validated filters, Convex walks `agencyProspects` with the shared
+ * helper, splits eligibility the same way, and enrolls each eligible prospect.
+ * A skipped prospect is reported with its reason, never silently dropped.
+ *
+ * Twenty writes are mirrored back as `outboundState`, so an operator watching
+ * the workspace sees position in the sequence. The mirror is best-effort: a
+ * Twenty failure does not un-enroll anyone (the enrollment is the source of
+ * truth for whether a message goes out), it is reported in the per-prospect
+ * outcome so the operator can see it.
+ *
+ * This is the one place Convex reaches Twenty, and it does it through the same
+ * `packages/core` helpers every other surface uses — no second implementation of
+ * the filter DSL or the eligibility rules lives here.
+ */
+export const enrollRecipients = action({
+  args: {
+    sequenceId: v.id("sequences"),
+    filters: v.array(
+      v.object({
+        field: v.string(),
+        operator: v.string(),
+        value: v.optional(v.union(v.string(), v.number(), v.boolean(), v.array(v.string()))),
+      }),
+    ),
+    ownerMemberId: v.optional(v.string()),
+    /** The outboundState to stamp on each enrolled prospect, so the mirror is explicit. */
+    outboundState: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    total: number;
+    enrolled: number;
+    skipped: number;
+    outcomes: Array<{ prospectId: string; phone: string | null; status: "enrolled" | "skipped"; detail: string | null }>;
+  }> => {
+    const twenty = twentyEnv();
+    if (!twenty) throw new Error("Twenty is not configured (TWENTY_BASE_URL, TWENTY_API_KEY)");
+
+    // Validate the filters with the shared menu before touching Twenty, so an
+    // invalid DSL is a clear error rather than a live query that matches wrong.
+    const validated = validateProspectFilters(args.filters);
+    if ("problems" in validated) {
+      throw new Error(`invalid prospect filters: ${validated.problems.join(" ")}`);
+    }
+    const dsl = filtersToDsl(validated.filters);
+
+    const sequence = await ctx.runQuery(internal.sequence.queries.sequenceById, {
+      sequenceId: args.sequenceId,
+    });
+    if (!sequence) throw new Error(`unknown sequence ${args.sequenceId}`);
+
+    const rows = await walkProspectRows(twentyClient(twenty), dsl);
+    const split = splitEligibility(rows);
+
+    const outcomes: Array<{
+      prospectId: string;
+      phone: string | null;
+      status: "enrolled" | "skipped";
+      detail: string | null;
+    }> = split.skipped.map(({ summary, reason }) => ({
+      prospectId: summary.id,
+      phone: summary.phone,
+      status: "skipped" as const,
+      detail: reason,
+    }));
+
+    let enrolled = 0;
+    for (const prospect of split.eligible) {
+      try {
+        await ctx.runMutation(internal.sequence.mutations.enrollInternal, {
+          sequenceId: args.sequenceId,
+          recipientId: prospect.id,
+          to: prospect.phone ?? undefined,
+          country: prospect.country ?? undefined,
+          ...(args.ownerMemberId ? { ownerMemberId: args.ownerMemberId } : {}),
+        });
+      } catch (error) {
+        // A suppressed peer, or a full sequence, is a skip with a reason rather
+        // than a failed run: the rest of the batch still goes out.
+        outcomes.push({
+          prospectId: prospect.id,
+          phone: prospect.phone,
+          status: "skipped",
+          detail: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
+      enrolled += 1;
+      outcomes.push({ prospectId: prospect.id, phone: prospect.phone, status: "enrolled", detail: null });
+
+      // Best-effort mirror: a Twenty outage must not undo an enrollment.
+      if (args.outboundState && prospect.phone) {
+        try {
+          await markProspectOutbound(
+            twentyClient(twenty),
+            prospect.id,
+            args.outboundState,
+          );
+        } catch {
+          outcomes.push({
+            prospectId: prospect.id,
+            phone: prospect.phone,
+            status: "enrolled",
+            detail: "enrolled, but outboundState could not be mirrored to Twenty",
+          });
+        }
+      }
+    }
+
+    return { total: rows.length, enrolled, skipped: outcomes.length - enrolled, outcomes };
   },
 });

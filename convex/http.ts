@@ -1,5 +1,9 @@
 import { httpRouter } from "convex/server";
 import { registerBlasterRoutes } from "./http/blaster.js";
+import { registerPoolRoutes } from "./http/pool.js";
+import { registerSequenceRoutes } from "./http/sequence.js";
+import { registerSuppressionRoutes } from "./http/suppressions.js";
+import { registerConversationRoutes } from "./http/conversations.js";
 
 /**
  * Blaster's read-only HTTP routes.
@@ -11,5 +15,9 @@ import { registerBlasterRoutes } from "./http/blaster.js";
 const http = httpRouter();
 
 registerBlasterRoutes(http);
+registerPoolRoutes(http);
+registerSequenceRoutes(http);
+registerSuppressionRoutes(http);
+registerConversationRoutes(http);
 
 export default http;

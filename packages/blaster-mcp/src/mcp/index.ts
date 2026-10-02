@@ -240,6 +240,20 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "blaster_list_conversation_persons",
+    description:
+      "List SMS conversations one row per person: the peer's threads folded by person, with the pool numbers they were reached from and the person's campaign union. Slower than blaster_list_conversations because it resolves the campaign on every thread.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Page size, max 200. Defaults to 50." },
+        number: { type: "string", description: "Only threads for this sending number, in E.164." },
+        campaign: { type: "string", description: "Only people with a thread in this campaign id." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "blaster_get_messages",
     description:
       "Read every message in one conversation, oldest first, with direction, body, delivery status and timestamps. Use blaster_list_conversations to obtain a conversation id.",
@@ -250,6 +264,137 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         limit: { type: "number", description: "Maximum messages, max 500." },
       },
       required: ["conversationId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_list_pools",
+    description:
+      "List number pools: each pool's status, how many of its numbers can send, and when it could next send.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "blaster_get_pool",
+    description:
+      "Read one pool with its numbers in dispatch order, including each number's rate state. Use blaster_list_pools to obtain a pool id.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        poolId: { type: "string", description: "The pool id from blaster_list_pools." },
+      },
+      required: ["poolId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_create_pool",
+    description:
+      "Create a number pool. minSpacingMs is the minimum gap between sends from one number; dailyCapPerNumber is the per-number daily ceiling (0 disables it).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "A human name for the pool." },
+        minSpacingMs: { type: "number", description: "Minimum gap between sends from one number, in milliseconds." },
+        dailyCapPerNumber: { type: "number", description: "Messages per number per day. 0 disables the cap." },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_add_pool_number",
+    description:
+      "Add a sending number to a pool, or reactivate one that was removed. The number is E.164 and must already be owned. Omit order to append.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        poolId: { type: "string", description: "The pool id." },
+        phoneNumber: { type: "string", description: "Sending number in E.164." },
+        order: { type: "number", description: "Sequential position; appends when omitted." },
+      },
+      required: ["poolId", "phoneNumber"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_remove_pool_number",
+    description:
+      "Remove a sending number from a pool. The removal is soft: the membership is kept as removed, so an in-flight send still resolves and the history survives.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        poolId: { type: "string", description: "The pool id." },
+        phoneNumber: { type: "string", description: "Sending number in E.164." },
+      },
+      required: ["poolId", "phoneNumber"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_reorder_pool",
+    description:
+      "Set the order a pool works its numbers in. Pass every number in the desired order; any number omitted keeps its position after the listed ones.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        poolId: { type: "string", description: "The pool id." },
+        order: { type: "array", description: "E.164 numbers, in the order the pool should work them." },
+      },
+      required: ["poolId", "order"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_list_suppressions",
+    description:
+      "List everyone on the durable per-person do-not-contact list, newest first. A STOP is recorded here and holds across every sequence and pool number.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "blaster_set_suppression",
+    description:
+      "Suppress a person by hand, or lift a suppression. A suppression is keyed on the E.164 peer and blocks enrollment and sending until lifted. Lifting is the only way to reopen contact.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        peer: { type: "string", description: "The person's number in E.164." },
+        suppressed: { type: "boolean", description: "true to suppress, false to lift." },
+        reason: { type: "string", description: "Why, for the operator list. Only used when suppressing." },
+      },
+      required: ["peer", "suppressed"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_enroll_recipients",
+    description:
+      "Enroll prospects into a sequence straight from Twenty, matching the send filter DSL. Returns a per-prospect outcome (enrolled or skipped with a reason). Requires Twenty and Convex configured.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sequenceId: { type: "string", description: "The Convex sequence id to enroll into." },
+        filters: {
+          type: "array",
+          description: "The same filter definitions the send command uses: { field, operator, value }.",
+        },
+        ownerMemberId: { type: "string", description: "The member to notify for replies to these enrollments." },
+        outboundState: { type: "string", description: "The Twenty outboundState to mirror onto each enrolled prospect." },
+      },
+      required: ["sequenceId", "filters"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_set_sequence_pool",
+    description:
+      "Assign a number pool to a sequence, so the sequence sends from the pool in order within each number's rate budget. Omit poolId to clear the assignment.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sequenceId: { type: "string", description: "The Convex sequence id." },
+        poolId: { type: "string", description: "The pool to assign; omit to clear." },
+      },
+      required: ["sequenceId"],
       additionalProperties: false,
     },
   },
@@ -596,6 +741,33 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
       }
     }
 
+    case "blaster_list_conversation_persons": {
+      try {
+        const client = blasterApi();
+        const rows = await client.listConversationPersons({
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+          number: typeof args.number === "string" ? args.number : undefined,
+          campaign: typeof args.campaign === "string" ? args.campaign : undefined,
+        });
+        return {
+          text:
+            rows.length === 0
+              ? "No conversations yet."
+              : rows
+                  .map(
+                    (row) =>
+                      `${row.phoneNumber} via ${row.blasterNumbers.join(", ")}: ${row.messageCount} message(s), ` +
+                      `last at ${new Date(row.latestMessageAt).toISOString()}` +
+                      (row.campaignGroup === "multiple" ? ` - ${row.candidateCampaignIds?.length ?? "?"} campaigns` : ""),
+                  )
+                  .join("\n"),
+          structured: { count: rows.length, persons: rows },
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
     case "blaster_get_messages": {
       const conversationId = typeof args.conversationId === "string" ? args.conversationId : "";
       if (!conversationId) return { text: "conversationId is required." };
@@ -616,6 +788,156 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
                   )
                   .join("\n"),
           structured: { conversationId, count: rows.length, messages: rows },
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_list_pools": {
+      try {
+        const pools = await blasterApi().listPools();
+        return {
+          text: pools.length === 0 ? "No pools yet." : `${pools.length} pool(s).`,
+          structured: { count: pools.length, pools },
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_get_pool": {
+      const poolId = typeof args.poolId === "string" ? args.poolId : "";
+      if (!poolId) return { text: "poolId is required." };
+      try {
+        const pool = await blasterApi().getPool(poolId);
+        if (!pool) return { text: `No pool ${poolId}.` };
+        return { text: `${pool.name}: ${pool.activeNumberCount} active number(s).`, structured: pool };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_create_pool": {
+      const name = typeof args.name === "string" ? args.name : "";
+      if (!name) return { text: "name is required." };
+      try {
+        const created = await blasterApi().createPool({
+          name,
+          ...(typeof args.minSpacingMs === "number" ? { minSpacingMs: args.minSpacingMs } : {}),
+          ...(typeof args.dailyCapPerNumber === "number" ? { dailyCapPerNumber: args.dailyCapPerNumber } : {}),
+        });
+        return { text: `Created pool ${created.id}.`, structured: created };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_add_pool_number": {
+      const poolId = typeof args.poolId === "string" ? args.poolId : "";
+      const phoneNumber = typeof args.phoneNumber === "string" ? args.phoneNumber : "";
+      if (!poolId || !phoneNumber) return { text: "poolId and phoneNumber are required." };
+      try {
+        const pool = await blasterApi().addPoolNumber({
+          poolId,
+          phoneNumber,
+          ...(typeof args.order === "number" ? { order: args.order } : {}),
+        });
+        return { text: `Added ${phoneNumber} to ${pool.name}.`, structured: pool };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_remove_pool_number": {
+      const poolId = typeof args.poolId === "string" ? args.poolId : "";
+      const phoneNumber = typeof args.phoneNumber === "string" ? args.phoneNumber : "";
+      if (!poolId || !phoneNumber) return { text: "poolId and phoneNumber are required." };
+      try {
+        const pool = await blasterApi().removePoolNumber({ poolId, phoneNumber });
+        return { text: `Removed ${phoneNumber} from ${pool.name}.`, structured: pool };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_reorder_pool": {
+      const poolId = typeof args.poolId === "string" ? args.poolId : "";
+      const order = Array.isArray(args.order) ? (args.order as unknown[]).map(String) : [];
+      if (!poolId || order.length === 0) return { text: "poolId and a non-empty order are required." };
+      try {
+        const pool = await blasterApi().reorderPoolNumbers({ poolId, order });
+        return { text: `Reordered ${pool.name}.`, structured: pool };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_set_sequence_pool": {
+      const sequenceId = typeof args.sequenceId === "string" ? args.sequenceId : "";
+      if (!sequenceId) return { text: "sequenceId is required." };
+      try {
+        const poolId = typeof args.poolId === "string" && args.poolId !== "" ? args.poolId : undefined;
+        const result = await blasterApi().setSequencePool({
+          sequenceId,
+          ...(poolId === undefined ? {} : { poolId }),
+        });
+        return {
+          text: poolId ? `Assigned pool ${poolId} to sequence ${sequenceId}.` : `Cleared the pool on sequence ${sequenceId}.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_list_suppressions": {
+      try {
+        const rows = await blasterApi().listSuppressions();
+        return {
+          text: rows.length === 0 ? "Nobody is suppressed." : `${rows.length} suppressed.`,
+          structured: { count: rows.length, suppressions: rows },
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_set_suppression": {
+      const peer = typeof args.peer === "string" ? args.peer : "";
+      if (!peer) return { text: "peer is required." };
+      if (typeof args.suppressed !== "boolean") return { text: "suppressed must be a boolean." };
+      try {
+        const result = await blasterApi().setSuppression({
+          peer,
+          suppressed: args.suppressed,
+          ...(typeof args.reason === "string" ? { reason: args.reason } : {}),
+        });
+        return {
+          text: result.changed
+            ? `${args.suppressed ? "Suppressed" : "Lifted the suppression on"} ${result.peer}.`
+            : `${result.peer} was already in that state.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_enroll_recipients": {
+      const sequenceId = typeof args.sequenceId === "string" ? args.sequenceId : "";
+      const filters = Array.isArray(args.filters) ? args.filters : [];
+      if (!sequenceId || filters.length === 0) return { text: "sequenceId and a non-empty filters array are required." };
+      try {
+        const result = await blasterApi().enrollRecipients({
+          sequenceId,
+          filters: filters as never,
+          ...(typeof args.ownerMemberId === "string" ? { ownerMemberId: args.ownerMemberId } : {}),
+          ...(typeof args.outboundState === "string" ? { outboundState: args.outboundState } : {}),
+        });
+        return {
+          text: `${result.enrolled} of ${result.total} prospect(s) enrolled, ${result.skipped} skipped.`,
+          structured: result,
         };
       } catch (error) {
         return { text: describeApiError(error) };
