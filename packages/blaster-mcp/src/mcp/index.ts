@@ -398,6 +398,57 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "blaster_register_sequence",
+    description:
+      "Register a new multi-step outreach sequence in Convex with validation. Optionally bind to a number pool and configure sender pinning.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Human name for the sequence." },
+        fromNumber: { type: "string", description: "Default sending number in E.164 (or pool sender)." },
+        poolId: { type: "string", description: "Optional number pool id to rotate senders." },
+        campaignId: { type: "string", description: "Optional Twenty or 10DLC campaign id." },
+        numberProfileId: { type: "string", description: "Optional Telnyx messaging profile id." },
+        steps: {
+          type: "array",
+          description: "Array of sequence steps: { text, delayHours, isStop }.",
+        },
+        options: {
+          type: "object",
+          description: "Sequence options: stopOnReply, dailyCapPerRecipient, pinSender, etc.",
+        },
+      },
+      required: ["name", "fromNumber", "steps"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_activate_sequence",
+    description:
+      "Activate a sequence in Convex so enrollments can be processed and sent. Sequence must have at least one step and an active pool or valid sender.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sequenceId: { type: "string", description: "The Convex sequence id to activate." },
+      },
+      required: ["sequenceId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_check_phone_compliance",
+    description:
+      "Check 10DLC brand, campaign assignment, and carrier provisioning compliance snapshot for a phone number.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        phoneNumber: { type: "string", description: "E.164 phone number to inspect." },
+      },
+      required: ["phoneNumber"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 function twenty(): TwentyClient {
@@ -937,6 +988,61 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
         });
         return {
           text: `${result.enrolled} of ${result.total} prospect(s) enrolled, ${result.skipped} skipped.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_register_sequence": {
+      const name = typeof args.name === "string" ? args.name : "";
+      const fromNumber = typeof args.fromNumber === "string" ? args.fromNumber : "";
+      const steps = Array.isArray(args.steps) ? (args.steps as never) : [];
+      if (!name || !fromNumber || steps.length === 0) {
+        return { text: "name, fromNumber, and at least one step are required." };
+      }
+      try {
+        const result = await blasterApi().registerSequence({
+          name,
+          fromNumber,
+          poolId: typeof args.poolId === "string" && args.poolId ? args.poolId : undefined,
+          campaignId: typeof args.campaignId === "string" ? args.campaignId : undefined,
+          numberProfileId: typeof args.numberProfileId === "string" ? args.numberProfileId : undefined,
+          steps,
+          options: typeof args.options === "object" && args.options !== null ? (args.options as never) : undefined,
+        });
+        return {
+          text: `Created sequence "${name}" (${result.sequenceId}) in draft state with ${result.stepCount} step(s).`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_activate_sequence": {
+      const sequenceId = typeof args.sequenceId === "string" ? args.sequenceId : "";
+      if (!sequenceId) return { text: "sequenceId is required." };
+      try {
+        const result = await blasterApi().activateSequence(sequenceId);
+        return {
+          text: `Sequence ${result.sequenceId} is now ${result.status}.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_check_phone_compliance": {
+      const phoneNumber = typeof args.phoneNumber === "string" ? args.phoneNumber : "";
+      if (!phoneNumber) return { text: "phoneNumber is required." };
+      try {
+        const result = await blasterApi().getPhoneCompliance(phoneNumber);
+        if (!result) return { text: `Phone number ${phoneNumber} not found in phone numbers ledger.` };
+        return {
+          text: `Phone ${result.phoneNumber}: readiness=${result.readiness.ready ? "ready" : "blocked"} (${result.readiness.reason ?? "OK"}), brand=${result.brandStatus ?? "none"}, campaign=${result.campaignStatus ?? "none"}, assignment=${result.assignmentStatus ?? "none"}.`,
           structured: result,
         };
       } catch (error) {

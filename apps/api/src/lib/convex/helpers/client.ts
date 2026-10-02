@@ -341,7 +341,7 @@ export async function setSequencePool(
 export async function listSequences(): Promise<PoolResult<SequenceOption[]>> {
   return poolCall(async () => {
     const rows = await convexClient()!.query(api.sequence.queries.listSequences, {});
-    return rows.map((row) => ({
+    return rows.map((row: any) => ({
       id: row._id,
       name: row.name,
       status: row.status,
@@ -360,6 +360,58 @@ export async function getSequenceById(
     });
     if (!row) return null;
     return { _id: row._id, name: row.name, status: row.status, poolId: row.poolId ?? null };
+  });
+}
+
+export async function createSequence(input: {
+  name: string;
+  fromNumber: string;
+  poolId?: string;
+  numberProfileId?: string;
+  campaignId?: string;
+  options?: {
+    stopOnReply: boolean;
+    respectDoNotContact: boolean;
+    requireProfileForCountry: boolean;
+    dailyCapPerRecipient: number;
+    pinSender?: boolean;
+  };
+  steps: Array<{ text: string; delayHours: number; isStop: boolean }>;
+}): Promise<PoolResult<{ sequenceId: string }>> {
+  return poolCall(async () => {
+    const sequenceId = await convexClient()!.mutation(api.sequence.mutations.createSequence, {
+      name: input.name,
+      fromNumber: input.fromNumber,
+      ...(input.poolId ? { poolId: input.poolId as Id<"pools"> } : {}),
+      ...(input.numberProfileId ? { numberProfileId: input.numberProfileId } : {}),
+      ...(input.campaignId ? { campaignId: input.campaignId } : {}),
+      ...(input.options ? { options: input.options } : {}),
+      steps: input.steps,
+    });
+    return { sequenceId };
+  });
+}
+
+export async function setSequenceStatus(
+  sequenceId: string,
+  status: "draft" | "active" | "paused" | "completed",
+): Promise<PoolResult<{ sequenceId: string; status: string }>> {
+  return poolCall(async () => {
+    const id = await convexClient()!.mutation(api.sequence.mutations.setSequenceStatus, {
+      sequenceId: sequenceId as Id<"sequences">,
+      status,
+    });
+    return { sequenceId: id, status };
+  });
+}
+
+export async function getPhoneCompliance(
+  phoneNumber: string,
+): Promise<PoolResult<unknown | null>> {
+  return poolCall(async () => {
+    return await convexClient()!.query(api.phoneNumbers.queries.getCompliance, {
+      phoneNumber,
+    });
   });
 }
 
@@ -388,7 +440,7 @@ export async function listLedgerNumbers(): Promise<ReadResult<LedgerNumber>> {
     const rows = await client.query(api.phoneNumbers.queries.listPhoneNumbers, {});
     return {
       status: "ok",
-      rows: rows.map((row) => ({
+      rows: rows.map((row: any) => ({
         phoneNumber: row.phoneNumber,
         ...(row.telnyxNumberId ? { telnyxNumberId: row.telnyxNumberId } : {}),
         ...(row.messagingProfileId ? { messagingProfileId: row.messagingProfileId } : {}),
@@ -422,7 +474,7 @@ export async function listSuppressions(): Promise<ReadResult<SuppressionRow>> {
     const rows = await client.query(api.suppressions.mutations.listSuppressions, {});
     return {
       status: "ok",
-      rows: rows.map((row) => ({
+      rows: rows.map((row: any) => ({
         peer: row.peer,
         ...(row.reason ? { reason: row.reason } : {}),
         source: row.source,

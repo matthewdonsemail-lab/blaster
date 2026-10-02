@@ -30,6 +30,15 @@ export const phoneInput = v.object({
   messagingProfileId: v.optional(v.string()),
   status: v.optional(v.string()),
   purchasedAt: v.optional(v.number()),
+  brandId: v.optional(v.string()),
+  brandStatus: v.optional(v.string()),
+  campaignId: v.optional(v.string()),
+  campaignStatus: v.optional(v.string()),
+  campaignUseCase: v.optional(v.string()),
+  assignmentStatus: v.optional(v.string()),
+  carrierProvisioningStatus: v.optional(v.string()),
+  complianceCheckedAt: v.optional(v.number()),
+  complianceSource: v.optional(v.string()),
 });
 
 export type PhoneInput = {
@@ -50,6 +59,15 @@ export type PhoneInput = {
   messagingProfileId?: string;
   status?: string;
   purchasedAt?: number;
+  brandId?: string;
+  brandStatus?: string;
+  campaignId?: string;
+  campaignStatus?: string;
+  campaignUseCase?: string;
+  assignmentStatus?: string;
+  carrierProvisioningStatus?: string;
+  complianceCheckedAt?: number;
+  complianceSource?: string;
 };
 
 export function telnyxKey(): string {

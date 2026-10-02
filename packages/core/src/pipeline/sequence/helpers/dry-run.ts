@@ -61,6 +61,12 @@ export interface DryRunInput {
   recipient: DryRunRecipient;
   now: number;
   evaluate: EligibilityEvaluator;
+  /** 10DLC compliance and sender readiness snapshot. */
+  senderReadiness?: {
+    ready: boolean;
+    reason: string | null;
+    checkedAt?: number | null;
+  };
   /**
    * Persisted enrollment state, for driving a real enrollment rather than a
    * hypothetical one. Absent means a fresh enrollment at cursor 0. The runner
@@ -113,6 +119,7 @@ export function dryRunEnrollment(input: DryRunInput): DryRunResult {
       doNotContact: input.recipient.doNotContact === true,
       hasReplied: input.recipient.hasReplied === true,
       numberProfileId: input.recipient.numberProfileId ?? null,
+      senderReadiness: input.senderReadiness,
     },
   });
   actor.start();

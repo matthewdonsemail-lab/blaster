@@ -215,6 +215,11 @@ export async function consume(
     return { sender: null, soonestNextAvailableAt: ready };
   }
 
+  const sender = await senderForRow(ctx, row, now);
+  if (!sender.readiness.ready) {
+    return { sender: null, soonestNextAvailableAt: null, blockedReason: "no-compliant-sender" };
+  }
+
   const rolled = now - row.dayStartedAt >= DAY_MS;
   await ctx.db.patch("poolNumbers", row._id, {
     sentToday: (rolled ? 0 : row.sentToday) + 1,
@@ -229,5 +234,5 @@ export async function consume(
     ...rollupOf(pool, updated, now),
     lastDispatchedAt: now,
   });
-  return { sender: await senderForRow(ctx, row), soonestNextAvailableAt: null };
+  return { sender, soonestNextAvailableAt: null };
 }

@@ -17,6 +17,7 @@ naming gates:
 | [member-attribution.md](member-attribution.md) | How a write is attributed to the signed-in member |
 | [naming-conventions.md](naming-conventions.md) | The required `{library}/{domainname}/helpers` directory structure |
 | [convex-naming-conventions.md](convex-naming-conventions.md) | The Convex tree's own naming and directory rules |
+| [plugins/README.md](plugins/README.md) | How `plugins/blaster/` is shaped to load natively on both Claude Code and Codex, and the vendor pages the layout is drawn from |
 | [agents/issue-tracker.md](agents/issue-tracker.md) | How the local-markdown issue tracker and wayfinder maps work in this repo |
 | [agents/triage-labels.md](agents/triage-labels.md) | The five canonical triage roles and their label strings |
 | [agents/domain.md](agents/domain.md) | How engineering skills should consume this repo's domain documentation |

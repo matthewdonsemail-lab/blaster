@@ -17,6 +17,8 @@ export {
   conversationMessages,
   convexClient,
   createPool,
+  createSequence,
+  getPhoneCompliance,
   getPool,
   getSequenceById,
   listConversations,
@@ -29,5 +31,6 @@ export {
   removePoolNumber,
   reorderPoolNumbers,
   setSequencePool,
+  setSequenceStatus,
   setSuppression,
 } from "./helpers/index.ts";

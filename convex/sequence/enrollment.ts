@@ -50,11 +50,26 @@ export async function enrollRecipient(
     .map(({ text, delayHours, isStop }) => ({ text, delayHours, isStop }));
 
   const enrolledAt = Date.now();
+
+  let pinnedSenderPhoneNumber: string | undefined;
+  let pinnedSenderNumberId: Id<"phoneNumbers"> | undefined;
+
+  if (sequence.poolId && sequence.options?.pinSender !== false) {
+    const { availableSender } = await import("../pool/helpers.js");
+    const availability = await availableSender(ctx, sequence.poolId, enrolledAt);
+    if (availability.sender) {
+      pinnedSenderPhoneNumber = availability.sender.phoneNumber;
+      pinnedSenderNumberId = availability.sender.phoneNumberId;
+    }
+  }
+
   return ctx.db.insert("sequenceEnrollments", {
     sequenceId: args.sequenceId,
     recipientId: args.recipientId,
     to: args.to,
     country: args.country,
+    pinnedSenderPhoneNumber,
+    pinnedSenderNumberId,
     ...(args.ownerMemberId ? { ownerMemberId: args.ownerMemberId } : {}),
     cursor: 0,
     status: "active",

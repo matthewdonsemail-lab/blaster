@@ -1,8 +1,8 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-02T03:26:21Z
-commit: docs: README lists only live CLI and MCP tools; check:surfaces enforces it
+updated: 2026-10-02T12:38:28Z
+commit: feat: outbound SMS 10DLC compliance gate, multi-scope rate limiting, and pool sender pinning
 -->
 
 The running scope for the number-pool objective. `scripts/check-goal.mjs` refuses
@@ -22,22 +22,42 @@ the per-number or account ceiling.
 ## Files changed
 
 - goal.md
-- README.md
 - apps/api/src/index.ts
 - apps/api/src/lib/convex/helpers/client.ts
 - apps/api/src/lib/convex/index.ts
-- apps/api/src/lib/convex/types.ts
-- apps/api/test/telnyx-webhook.test.ts
 - convex/_generated/api.d.ts
-- convex/conversations/model.ts
+- convex/phoneNumbers/actions.ts
+- convex/phoneNumbers/compliance.ts
 - convex/phoneNumbers/model.ts
+- convex/phoneNumbers/mutations.ts
+- convex/phoneNumbers/queries.ts
 - convex/pool/helpers.ts
-- convex/pool/index.ts
 - convex/pool/model.ts
-- convex/pool/mutations.ts
-- convex/pool/queries.ts
-- convex/pool/types.ts
-- convex/pool/utils.ts
+- convex/rateLimit.ts
+- convex/schema/phone.ts
+- convex/schema/sequences.ts
+- convex/sequence/actions.ts
+- convex/sequence/enrollment.ts
+- convex/sequence/helpers.ts
+- convex/sequence/mutations.ts
+- convex/sequence/types.ts
+- convex/test/harness.ts
+- packages/blaster-cli/src/cli/index.ts
+- packages/blaster-cli/src/cli/sequence.ts
+- packages/blaster-mcp/src/mcp/index.ts
+- packages/core/src/blaster/api/helpers/client.ts
+- packages/core/src/blaster/api/types.ts
+- packages/core/src/pipeline/sequence/compliance.ts
+- packages/core/src/pipeline/sequence/helpers/dry-run.ts
+- packages/core/src/pipeline/sequence/helpers/quiet-hours.ts
+- packages/core/src/pipeline/sequence/index.ts
+- packages/core/src/pipeline/sequence/machine.ts
+- packages/core/src/pipeline/sequence/types.ts
+- packages/core/src/telnyx/messaging/helpers/phone-derived-state.ts
+- packages/core/test/compliance.test.ts
+- packages/core/test/phone-derived-state.test.ts
+- packages/core/test/sequence-machine.test.ts
+- scripts/check-surfaces.mjs
 - convex/rateLimit.ts
 - convex/schema.ts
 - convex/schema/pool.ts
@@ -150,3 +170,12 @@ the per-number or account ceiling.
 - [x] Open the PR and get the pool branch merged to `main` (ticket 05) — merged 2026-10-02, `9b70ac3`
 - [ ] README reflects only live, relay-contracted CLI and MCP tools; `check:surfaces` enforces it as a pre-push gate
 - [ ] Authored docs aligned to current state: docs/sequencer.md delivery step, docs/architecture.md gates table, docs/README.md authored index, docs/deployment.md rewritten for Railcode
+- [ ] Dual-host plugin tree: `plugins/blaster/` carries both Claude Code (`.claude-plugin/` + `.mcp.json`) and Codex (root `plugin.json` + `mcp.json` + `.agents/plugins/marketplace.json`) from one source; five skills drawn from the as-built docs; vendor pages committed under `docs/plugins/`
+- [x] 10DLC compliance verification snapshot and send gate: `checkSenderReadiness` (7 gates, snapshot freshness limit), `checkDocReadiness`, hard send gate excluding unverified US long-codes
+- [x] Multi-scope token bucket rate limiting: atomic capacity check across account ceiling, per-number rate bucket, campaign class throughput, and brand daily cap
+- [x] Stable sender identity: per-enrollment sender pinning (`pinnedSenderPhoneNumber`, `pinnedSenderNumberId`) from active pools
+- [x] State machine sender-readiness gate: `senderNotReady` guard parks unverified senders to `awaiting_human`
+- [x] Parity across operator surfaces: CLI (`blaster phones compliance`, `blaster sequence activate`), MCP (`blaster_check_phone_compliance`, `blaster_activate_sequence`, `blaster_register_sequence`), and HTTP API (`/api/phones/:number/compliance`, `/api/sequences/:id/activate`, `/api/sequences`)
+- [x] Recipient timezone derivation: synchronous area-code to USPS state mapping via `lookupAreaCodeState` in `timeZoneForNumber` prevents valid US numbers without explicit state codes from parking as unplaceable
+- [x] Telnyx 10DLC provider sync action: `phoneNumbers:refreshComplianceSnapshot` queries live carrier/campaign provisioning and updates the compliance snapshot
+

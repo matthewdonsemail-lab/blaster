@@ -49,6 +49,8 @@ interface Verdict {
   eligible: boolean;
   reason: string | null;
   detail: string | null;
+  senderReady: boolean;
+  senderReason: string | null;
   quiet: boolean;
   /** When to reconsider, when the step is deferred. Null when computable now. */
   nextAllowedAt: number | null;
@@ -78,6 +80,8 @@ interface EnrollmentContext {
   hasReplied: boolean;
   /** The profile bound to the sending number, forwarded to eligibility. */
   numberProfileId?: string | null;
+  /** 10DLC compliance and sender readiness snapshot. */
+  senderReadiness?: EnrollmentMachineInput["senderReadiness"];
   evaluate: EnrollmentMachineInput["evaluate"];
   nextAllowedSendAt: EnrollmentMachineInput["nextAllowedSendAt"];
   verdict: Verdict | null;
@@ -133,6 +137,8 @@ export function createEnrollmentMachine() {
             eligible: verdict.eligible,
             reason: verdict.reason,
             detail: verdict.detail,
+            senderReady: context.senderReadiness?.ready ?? true,
+            senderReason: context.senderReadiness?.reason ?? null,
             quiet: window.quiet,
             nextAllowedAt: context.nextAllowedSendAt(context.now),
             unplaceable: window.localHour === null,
@@ -168,6 +174,20 @@ export function createEnrollmentMachine() {
       parkUnplaceable: assign(() => ({
         nextDueAt: null,
         lastSkipReason: "unplaceable-recipient",
+        status: "awaiting-human" as const,
+        pendingEffect: { type: "none" } as const,
+        verdict: null,
+      })),
+
+      /**
+       * Sender is not 10DLC compliant or not ready to send.
+       * Parked for a human rather than attempting an unregistered/blocked send.
+       */
+      parkSenderNotReady: assign(({ context }) => ({
+        nextDueAt: null,
+        lastSkipReason: context.verdict?.senderReason
+          ? `sender-not-ready:${context.verdict.senderReason}`
+          : "sender-not-ready",
         status: "awaiting-human" as const,
         pendingEffect: { type: "none" } as const,
         verdict: null,
@@ -286,6 +306,7 @@ export function createEnrollmentMachine() {
       reachedStopStep: ({ context }) => context.steps[context.cursor]?.isStop === true,
       notEligible: ({ context }) => context.verdict?.eligible === false,
       recipientUnplaceable: ({ context }) => context.verdict?.unplaceable === true,
+      senderNotReady: ({ context }) => context.verdict?.senderReady === false,
       withinQuietHours: ({ context }) => context.verdict?.quiet === true,
       /**
        * Retry only a failure that is both worth retrying and still has attempts
@@ -327,6 +348,7 @@ export function createEnrollmentMachine() {
       doNotContact: input.doNotContact,
       hasReplied: input.hasReplied,
       numberProfileId: input.numberProfileId ?? null,
+      senderReadiness: input.senderReadiness,
       evaluate: input.evaluate,
       nextAllowedSendAt: input.nextAllowedSendAt,
       verdict: null,
@@ -361,6 +383,7 @@ export function createEnrollmentMachine() {
       evaluating: {
         entry: "evaluateTick",
         always: [
+          { guard: "senderNotReady", target: "awaiting_human", actions: "parkSenderNotReady" },
           { guard: "recipientUnplaceable", target: "awaiting_human", actions: "parkUnplaceable" },
           { guard: "pastLastStep", target: "completed", actions: "finish" },
           { guard: "reachedStopStep", target: "completed", actions: "finish" },

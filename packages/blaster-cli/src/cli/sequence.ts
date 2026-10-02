@@ -65,6 +65,8 @@ const DRAFT_FILE_LABEL = ".blaster/sequences.json";
 export const SEQUENCE_USAGE = `Usage: blaster sequence <action> [name]
 
   new [name]     Build a draft interactively, check it, and record it
+                 Flags: --register, --pool <id>, --from <number>, --activate
+  activate <id>  Activate a sequence in Convex
   list           What is recorded
   show <name>    The steps, plus a per-recipient plan
   edit <name>    Change the first message
@@ -397,16 +399,56 @@ async function newDraft(ctx: SequenceContext): Promise<number> {
     return 1;
   }
 
+  const registerFlag = ctx.flags.get("register") === true;
+  const poolId = typeof ctx.flags.get("pool") === "string" ? (ctx.flags.get("pool") as string) : undefined;
+  let backendSequenceId: string | undefined;
+
+  if (registerFlag || poolId !== undefined) {
+    const live = await liveClient(ctx);
+    if (typeof live === "number") return live;
+    try {
+      const registered = await live.client.registerSequence({
+        name,
+        fromNumber: from,
+        poolId,
+        campaignId: typeof ctx.flags.get("campaign") === "string" ? (ctx.flags.get("campaign") as string) : undefined,
+        numberProfileId: typeof ctx.flags.get("profile") === "string" ? (ctx.flags.get("profile") as string) : undefined,
+        steps,
+        options: draft.options,
+      });
+      backendSequenceId = registered.sequenceId;
+      if (ctx.flags.get("activate") === true) {
+        await live.client.activateSequence(registered.sequenceId);
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`blaster sequence new: could not register with Convex backend: ${detail}`);
+      return 1;
+    }
+  }
+
   const created = saveDraft(ctx.root, draft, new Date(ctx.now()).toISOString());
   const summary = summarise(draft);
   if (ctx.json) {
-    console.log(ctx.jsonOut({ recorded: true, created, draft, summary }));
+    console.log(
+      ctx.jsonOut({
+        recorded: true,
+        created,
+        draft,
+        summary,
+        ...(backendSequenceId ? { sequenceId: backendSequenceId } : {}),
+      }),
+    );
   } else if (interactive) {
     finish(
-      `${created ? "Recorded" : "Updated"} "${name}": ${summary.sendingSteps} message(s) across ${summary.spanHours}h.`,
+      `${created ? "Recorded" : "Updated"} "${name}": ${summary.sendingSteps} message(s) across ${summary.spanHours}h.` +
+        (backendSequenceId ? ` Registered as ${backendSequenceId}.` : ""),
     );
   } else {
-    console.log(`${created ? "Recorded" : "Updated"} "${name}" in ${DRAFT_FILE_LABEL}.`);
+    console.log(
+      `${created ? "Recorded" : "Updated"} "${name}" in ${DRAFT_FILE_LABEL}.` +
+        (backendSequenceId ? ` Registered as ${backendSequenceId}.` : ""),
+    );
   }
   return 0;
 }

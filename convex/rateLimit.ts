@@ -36,6 +36,8 @@ import type { MutationCtx } from "./_generated/server.js";
 export const rateLimiter = new RateLimiter(components.rateLimiter, {
   telnyxSend: { kind: "token bucket", rate: 5, period: SECOND, capacity: 10 },
   telnyxSendPerNumber: { kind: "token bucket", rate: 1, period: SECOND, capacity: 3 },
+  telnyxSendCampaign: { kind: "token bucket", rate: 10, period: SECOND, capacity: 20 },
+  telnyxSendBrand: { kind: "token bucket", rate: 50, period: SECOND, capacity: 100 },
 });
 
 /**
@@ -56,38 +58,68 @@ export interface SendCapacity {
   ok: boolean;
   /** When capacity would next be available, or null when it is available now. */
   retryAfter: number | null;
+  scope?: "account" | "number" | "campaign" | "brand";
+  reason?: string;
+}
+
+export interface ClaimSendCapacityOptions {
+  fromNumber: string;
+  campaignId?: string;
+  brandId?: string;
 }
 
 /**
  * Claim capacity for one send, or explain when to come back.
  *
- * Both limits are checked before either is consumed. `limit()` consumes as it
- * evaluates, so consuming the account limit and then finding the per-number limit
- * exhausted would spend a token on a send that never happens, and the shortfall
- * would then throttle real traffic. Checking first costs one extra component
- * call per send and cannot race: the whole thing is one transaction, so nothing
- * can slip between the check and the consumption.
- *
- * A failed claim consumes nothing at all, which is what lets the caller treat a
- * refusal as "not yet" rather than as "this was attempted".
- *
- * Must be called from a mutation or query: the component reads and writes the
- * database, and actions have no `ctx.db`. The runner reaches it through an
- * internal mutation for that reason.
+ * Every applicable limit (account, number, campaign, brand) is checked before
+ * any token is consumed. Checking first costs extra component calls per send
+ * but guarantees atomic evaluation within one transaction: a failed claim
+ * consumes nothing at all, which lets the caller treat a refusal as "not yet"
+ * without leaking tokens or stranding rate capacity.
  */
 export async function claimSendCapacity(
   ctx: MutationCtx,
-  options: { fromNumber: string },
+  options: ClaimSendCapacityOptions,
 ): Promise<SendCapacity> {
   const account = await rateLimiter.check(ctx, "telnyxSend");
-  if (!account.ok) return { ok: false, retryAfter: account.retryAfter };
+  if (!account.ok) {
+    return { ok: false, retryAfter: account.retryAfter, scope: "account", reason: "account-capacity-exhausted" };
+  }
 
   const perNumber = await rateLimiter.check(ctx, "telnyxSendPerNumber", {
     key: options.fromNumber,
   });
-  if (!perNumber.ok) return { ok: false, retryAfter: perNumber.retryAfter };
+  if (!perNumber.ok) {
+    return { ok: false, retryAfter: perNumber.retryAfter, scope: "number", reason: "number-rate-limited" };
+  }
+
+  if (options.campaignId) {
+    const campaign = await rateLimiter.check(ctx, "telnyxSendCampaign", {
+      key: options.campaignId,
+    });
+    if (!campaign.ok) {
+      return { ok: false, retryAfter: campaign.retryAfter, scope: "campaign", reason: "campaign-rate-limited" };
+    }
+  }
+
+  if (options.brandId) {
+    const brand = await rateLimiter.check(ctx, "telnyxSendBrand", {
+      key: options.brandId,
+    });
+    if (!brand.ok) {
+      return { ok: false, retryAfter: brand.retryAfter, scope: "brand", reason: "brand-rate-limited" };
+    }
+  }
 
   await rateLimiter.limit(ctx, "telnyxSend");
   await rateLimiter.limit(ctx, "telnyxSendPerNumber", { key: options.fromNumber });
+  if (options.campaignId) {
+    await rateLimiter.limit(ctx, "telnyxSendCampaign", { key: options.campaignId });
+  }
+  if (options.brandId) {
+    await rateLimiter.limit(ctx, "telnyxSendBrand", { key: options.brandId });
+  }
+
   return { ok: true, retryAfter: null };
 }
+

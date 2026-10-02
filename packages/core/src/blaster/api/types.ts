@@ -291,6 +291,56 @@ export interface SequenceOption {
   poolId: string | null;
 }
 
+export interface RegisterSequenceInput {
+  name: string;
+  fromNumber: string;
+  poolId?: string;
+  numberProfileId?: string;
+  campaignId?: string;
+  options?: Partial<{
+    stopOnReply: boolean;
+    respectDoNotContact: boolean;
+    requireProfileForCountry: boolean;
+    dailyCapPerRecipient: number;
+    pinSender: boolean;
+  }>;
+  steps: Array<{
+    text: string;
+    delayHours: number;
+    isStop: boolean;
+  }>;
+}
+
+export interface RegisterSequenceResult {
+  sequenceId: string;
+  status: string;
+  stepCount: number;
+}
+
+export interface ActivateSequenceResult {
+  sequenceId: string;
+  status: string;
+}
+
+export interface PhoneComplianceResult {
+  phoneNumber: string;
+  brandId?: string;
+  brandStatus?: string;
+  campaignId?: string;
+  campaignStatus?: string;
+  campaignUseCase?: string;
+  assignmentStatus?: string;
+  carrierProvisioningStatus?: string;
+  complianceCheckedAt?: number;
+  complianceSource?: string;
+  messagingProfileId?: string;
+  readiness: {
+    ready: boolean;
+    reason?: string;
+    detail?: string;
+  };
+}
+
 /** One durable per-person suppression, as `/api/suppressions` returns it. */
 export interface SuppressionRow {
   peer: string;

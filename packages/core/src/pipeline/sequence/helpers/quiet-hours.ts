@@ -27,6 +27,7 @@
  */
 
 import { normaliseCountry } from "../../../telnyx/messaging/helpers/profile.ts";
+import { lookupAreaCodeState } from "../../../telnyx/messaging/helpers/phone-derived-state.ts";
 
 /** The sending window, in the recipient's local time. */
 export const QUIET_HOURS_START_HOUR = 8;
@@ -235,5 +236,6 @@ export function timeZoneForNumber(
   // territory code from the parser, so the check is against the country the
   // number actually belongs to rather than the +1 plan.
   if (country && country !== "US") return { timeZone: null, approximate: false };
-  return timeZoneForState(stateCode);
+  const effectiveState = stateCode ?? lookupAreaCodeState(to);
+  return timeZoneForState(effectiveState);
 }

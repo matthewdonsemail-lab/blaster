@@ -61,6 +61,8 @@ import { applyOutboundStatus, conversationMessages, listConversations, recordInb
 import {
   addPoolNumber,
   createPool,
+  createSequence,
+  getPhoneCompliance,
   enrollRecipients,
   getPool,
   listLedgerNumbers,
@@ -71,6 +73,7 @@ import {
   removePoolNumber,
   reorderPoolNumbers,
   setSequencePool,
+  setSequenceStatus,
   setSuppression,
 } from "./lib/convex/index.ts";
 import { requireOperator, resolveOperatorActor } from "./lib/auth/operator/index.ts";
@@ -679,6 +682,68 @@ pools.post("/sequences/:id/pool", requireOperator, async (c) => {
   );
   if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
   if (result.status === "failed") return c.json({ error: "Failed to assign the pool", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+/**
+ * Register a new sequence with steps and optional pool binding in one validated workflow.
+ */
+pools.post("/sequences", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as Partial<SequenceDraft & { poolId?: string }> | null;
+  if (!body) return c.json({ error: "a JSON body is required" }, 400);
+
+  const draft: SequenceDraft = {
+    name: body.name ?? "",
+    fromNumber: body.fromNumber ?? "",
+    campaignId: body.campaignId,
+    numberProfileId: body.numberProfileId,
+    options: {
+      ...DEFAULT_OPTIONS,
+      ...(body.options as Partial<typeof DEFAULT_OPTIONS> | undefined),
+    },
+    steps: Array.isArray(body.steps) ? (body.steps as SequenceStepDraft[]) : [],
+  };
+
+  const problems = validateDraft(draft);
+  if (problems.length > 0) {
+    return c.json({ error: "invalid sequence draft", problems }, 400);
+  }
+
+  const result = await createSequence({
+    name: draft.name,
+    fromNumber: draft.fromNumber,
+    poolId: typeof body.poolId === "string" && body.poolId !== "" ? body.poolId : undefined,
+    numberProfileId: draft.numberProfileId,
+    campaignId: draft.campaignId,
+    options: draft.options,
+    steps: draft.steps,
+  });
+
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to create sequence", detail: result.error }, 502);
+  return c.json({ sequenceId: result.value.sequenceId, status: "draft", stepCount: draft.steps.length }, 201);
+});
+
+/**
+ * Activate a sequence once validated.
+ */
+pools.post("/sequences/:id/activate", requireOperator, async (c) => {
+  const id = c.req.param("id");
+  const result = await setSequenceStatus(id, "active");
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to activate sequence", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+/**
+ * Get 10DLC compliance and carrier readiness snapshot for a phone number.
+ */
+pools.get("/phones/:number/compliance", requireOperator, async (c) => {
+  const phoneNumber = c.req.param("number");
+  const result = await getPhoneCompliance(phoneNumber);
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to read phone compliance", detail: result.error }, 502);
+  if (result.value === null) return c.json({ error: "Unknown phone number" }, 404);
   return c.json(result.value);
 });
 

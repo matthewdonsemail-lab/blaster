@@ -17,3 +17,4 @@ export type {
 export { MAX_STEP_ATTEMPTS, RETRY_BACKOFF_MS, SKIP_RETRY_MS, claimKeyFor } from "./types.ts";
 export { createEnrollmentMachine } from "./machine.ts";
 export type { EnrollmentMachine } from "./machine.ts";
+export * from "./compliance.ts";

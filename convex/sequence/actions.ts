@@ -95,16 +95,37 @@ export const runEnrollmentStep = internalAction({
     // which is what keeps the message out of the carrier's limit queue.
     let fromNumber = sequence.fromNumber;
     let numberProfileId: string | null = sequence.numberProfileId ?? null;
-    // The order `availableSender` proposed. It is passed back to `consumeSender`
-    // so the reservation is for the same member eligibility and the limiter were
-    // evaluated against, rather than a fresh pick that could differ.
     let poolOrder: number | null = null;
-    if (sequence.poolId) {
+    let senderReadiness: { ready: boolean; reason: string | null } = { ready: true, reason: null };
+
+    if (enrollment.pinnedSenderPhoneNumber) {
+      fromNumber = enrollment.pinnedSenderPhoneNumber;
+      const phoneDoc = await ctx.runQuery(internal.phoneNumbers.queries.getPhoneNumberDoc, {
+        phoneNumber: fromNumber,
+      });
+      if (phoneDoc) {
+        numberProfileId = phoneDoc.messagingProfileId ?? null;
+        const { checkDocReadiness } = await import("../phoneNumbers/compliance.js");
+        const docReadiness = checkDocReadiness(phoneDoc, now);
+        if (!docReadiness.ready) {
+          senderReadiness = { ready: false, reason: docReadiness.reason };
+        }
+      }
+    } else if (sequence.poolId) {
       const availability = await ctx.runQuery(internal.pool.queries.availableSender, {
         poolId: sequence.poolId as Id<"pools">,
         now,
       });
       if (!availability.sender) {
+        if (availability.blockedReason === "no-compliant-sender") {
+          await ctx.runMutation(internal.sequence.mutations.applySchedule, {
+            enrollmentId: enrollment._id,
+            status: "awaiting-human",
+            lastSkipReason: "pool-no-compliant-sender",
+            attempts: enrollment.attempts ?? 0,
+          });
+          return { kind: "sentinel", reason: "pool-no-compliant-sender" };
+        }
         if (availability.soonestNextAvailableAt) {
           await ctx.runMutation(internal.sequence.mutations.applySchedule, {
             enrollmentId: enrollment._id,
@@ -115,8 +136,6 @@ export const runEnrollmentStep = internalAction({
           });
           return { kind: "sentinel", reason: "pool-rate-limited" };
         }
-        // No active numbers at all. Parking for a human beats retrying an empty
-        // pool forever, and it is not a silent drop: the reason is recorded.
         await ctx.runMutation(internal.sequence.mutations.applySchedule, {
           enrollmentId: enrollment._id,
           status: "awaiting-human",
@@ -128,6 +147,20 @@ export const runEnrollmentStep = internalAction({
       fromNumber = availability.sender.phoneNumber;
       numberProfileId = availability.sender.messagingProfileId ?? null;
       poolOrder = availability.sender.order;
+      if (!availability.sender.readiness.ready) {
+        senderReadiness = { ready: false, reason: availability.sender.readiness.reason };
+      }
+    } else {
+      const phoneDoc = await ctx.runQuery(internal.phoneNumbers.queries.getPhoneNumberDoc, {
+        phoneNumber: fromNumber,
+      });
+      if (phoneDoc) {
+        const { checkDocReadiness } = await import("../phoneNumbers/compliance.js");
+        const docReadiness = checkDocReadiness(phoneDoc, now);
+        if (!docReadiness.ready) {
+          senderReadiness = { ready: false, reason: docReadiness.reason };
+        }
+      }
     }
 
     const env = profileEnv(loaded.profilePairs);
@@ -149,6 +182,7 @@ export const runEnrollmentStep = internalAction({
       sequenceId: sequence._id,
       steps,
       fromNumber,
+      senderReadiness,
       recipient: {
         id: enrollment.recipientId,
         to: enrollment.to ?? null,
@@ -233,36 +267,8 @@ export const runEnrollmentStep = internalAction({
       numberProfileId,
     });
 
-    // Capacity is claimed once the send is certain to be attempted: the number,
-    // the profile and the eligibility decision all say yes. It is claimed for
-    // `fromNumber`, the pool's chosen number when a pool is assigned, so the
-    // account ceiling and the per-number bucket in convex/rateLimit.ts gate the
-    // pool path exactly as they gate a fixed-number sequence.
-    //
-    // Claimed BEFORE `claimStep`, because a claim taken here would be permanent
-    // (sequenceSendClaims rows are never deleted) and a capacity refusal would
-    // then strand the step as already-claimed forever. Deferring with no claim
-    // held is what lets the step be retried.
-    const capacity = await ctx.runMutation(internal.sequence.mutations.claimSendCapacity, {
-      fromNumber,
-    });
-    if (!capacity.ok) {
-      await ctx.runMutation(internal.sequence.mutations.applySchedule, {
-        enrollmentId: enrollment._id,
-        status: "active",
-        nextDueAt: capacity.retryAfter ?? now + 60_000,
-        lastSkipReason: "send-capacity-exhausted",
-        attempts: enrollment.attempts ?? 0,
-      });
-      return { kind: "sentinel", reason: "send-capacity-exhausted" };
-    }
-
-    // Reserve the pool's own pacing budget only now that the provider call is
-    // certain to be attempted, so a limiter refusal above never costs a number an
-    // allowance. The pool picks WHICH number sends; the rate limiter above is
-    // what decides WHETHER it may, so the two do not compete: the pool paces,
-    // the limiter admits. Losing the reservation here is rare (another runner
-    // took the last slot); the answer is still to defer, never to send unpaced.
+    // Reserve the pool's own pacing budget first, so losing the pool reservation
+    // never consumes an account or per-number capacity token.
     if (sequence.poolId && poolOrder !== null) {
       const reserved = await ctx.runMutation(internal.pool.mutations.consumeSender, {
         poolId: sequence.poolId as Id<"pools">,
@@ -270,6 +276,15 @@ export const runEnrollmentStep = internalAction({
         now,
       });
       if (!reserved.sender) {
+        if (reserved.blockedReason === "no-compliant-sender") {
+          await ctx.runMutation(internal.sequence.mutations.applySchedule, {
+            enrollmentId: enrollment._id,
+            status: "awaiting-human",
+            lastSkipReason: "sender-not-ready",
+            attempts: enrollment.attempts ?? 0,
+          });
+          return { kind: "sentinel", reason: "sender-not-ready" };
+        }
         await ctx.runMutation(internal.sequence.mutations.applySchedule, {
           enrollmentId: enrollment._id,
           status: "active",
@@ -286,6 +301,26 @@ export const runEnrollmentStep = internalAction({
         recipientCountry: enrollment.country ?? null,
         numberProfileId,
       });
+    }
+
+    // Claim capacity across account ceiling, number bucket, and campaign allowance.
+    // Claimed BEFORE `claimStep`, because a claim taken here would be permanent
+    // (sequenceSendClaims rows are never deleted) and a capacity refusal would
+    // then strand the step as already-claimed forever. Deferring with no claim
+    // held is what lets the step be retried.
+    const capacity = await ctx.runMutation(internal.sequence.mutations.claimSendCapacity, {
+      fromNumber,
+      campaignId: sequence.campaignId,
+    });
+    if (!capacity.ok) {
+      await ctx.runMutation(internal.sequence.mutations.applySchedule, {
+        enrollmentId: enrollment._id,
+        status: "active",
+        nextDueAt: capacity.retryAfter ?? now + 60_000,
+        lastSkipReason: "send-capacity-exhausted",
+        attempts: enrollment.attempts ?? 0,
+      });
+      return { kind: "sentinel", reason: "send-capacity-exhausted" };
     }
 
     // Claim the step last, immediately before the provider call. Claim-before-send

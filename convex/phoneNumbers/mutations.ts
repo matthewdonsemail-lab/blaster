@@ -1,4 +1,4 @@
-import { internalMutation, mutation } from "../_generated/server.js";
+import { internalMutation, mutation, type MutationCtx } from "../_generated/server.js";
 import { v } from "convex/values";
 import { phoneInput, type PhoneInput } from "./model.js";
 
@@ -60,3 +60,69 @@ export const importTwentyPhones = mutation({
     return { stored, skipped: args.phones.length - stored };
   },
 });
+
+export const complianceSnapshotArgsValidator = {
+  phoneNumber: v.string(),
+  brandId: v.optional(v.string()),
+  brandStatus: v.optional(v.string()),
+  campaignId: v.optional(v.string()),
+  campaignStatus: v.optional(v.string()),
+  campaignUseCase: v.optional(v.string()),
+  assignmentStatus: v.optional(v.string()),
+  carrierProvisioningStatus: v.optional(v.string()),
+  complianceSource: v.optional(v.string()),
+  complianceCheckedAt: v.optional(v.number()),
+};
+
+async function recordComplianceSnapshot(
+  ctx: MutationCtx,
+  args: {
+    phoneNumber: string;
+    brandId?: string;
+    brandStatus?: string;
+    campaignId?: string;
+    campaignStatus?: string;
+    campaignUseCase?: string;
+    assignmentStatus?: string;
+    carrierProvisioningStatus?: string;
+    complianceSource?: string;
+    complianceCheckedAt?: number;
+  },
+) {
+  const existing = await ctx.db
+    .query("phoneNumbers")
+    .withIndex("phoneNumber", (q) => q.eq("phoneNumber", args.phoneNumber))
+    .unique();
+  const payload = {
+    brandId: args.brandId,
+    brandStatus: args.brandStatus,
+    campaignId: args.campaignId,
+    campaignStatus: args.campaignStatus,
+    campaignUseCase: args.campaignUseCase,
+    assignmentStatus: args.assignmentStatus,
+    carrierProvisioningStatus: args.carrierProvisioningStatus,
+    complianceSource: args.complianceSource ?? "manual-sync",
+    complianceCheckedAt: args.complianceCheckedAt ?? Date.now(),
+  };
+  if (existing) {
+    await ctx.db.patch("phoneNumbers", existing._id, payload);
+    return existing._id;
+  }
+  return ctx.db.insert("phoneNumbers", {
+    phoneNumber: args.phoneNumber,
+    ...payload,
+  });
+}
+
+/** Persist a verified 10DLC compliance snapshot for a number. */
+export const updateComplianceSnapshot = mutation({
+  args: complianceSnapshotArgsValidator,
+  handler: async (ctx, args) => recordComplianceSnapshot(ctx, args),
+});
+
+/** Internal version for provider sync actions. */
+export const updateComplianceSnapshotInternal = internalMutation({
+  args: complianceSnapshotArgsValidator,
+  handler: async (ctx, args) => recordComplianceSnapshot(ctx, args),
+});
+

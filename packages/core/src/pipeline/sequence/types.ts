@@ -146,6 +146,12 @@ export interface EnrollmentMachineInput {
   hasReplied: boolean;
   /** The profile bound to the sending number, forwarded to eligibility. */
   numberProfileId?: string | null;
+  /** 10DLC compliance and sender readiness snapshot. */
+  senderReadiness?: {
+    ready: boolean;
+    reason: string | null;
+    checkedAt?: number | null;
+  };
 }
 
 export type EnrollmentEvent =

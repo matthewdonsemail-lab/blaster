@@ -34,6 +34,7 @@ const MCP_SOURCE = join(root, "packages/blaster-mcp/src/mcp/index.ts");
 const API_SOURCE = join(root, "apps/api/src/index.ts");
 const CONVEX_HTTP_DIR = join(root, "convex/http");
 const README = join(root, "README.md");
+const SKILLS_DIR = join(root, "plugins/blaster/skills");
 
 const violations = [];
 const report = (message) => violations.push(message);
@@ -173,6 +174,27 @@ function check() {
       const tool = name[0];
       if (!advertised.has(tool)) {
         report(`README.md names MCP tool "${tool}", which the MCP server does not advertise.`);
+      }
+    }
+  }
+
+  // The skills under plugins/blaster/ name blaster_<tool> tokens in their body
+  // to steer the model to the right tool. The same rule applies: a token that
+  // the MCP server does not advertise is a phantom, and a skill that ships it
+  // would steer an agent to a tool that does not exist.
+  let skillFiles = [];
+  try {
+    skillFiles = readdirSync(SKILLS_DIR, { recursive: true }).filter((f) => String(f).endsWith("SKILL.md")).map((f) => join(SKILLS_DIR, String(f)));
+  } catch {
+    // No skills directory yet is fine; nothing to check.
+  }
+  for (const file of skillFiles) {
+    const source = read(file);
+    if (source === "") continue;
+    for (const match of source.matchAll(/blaster_[a-z0-9_]+/g)) {
+      const tool = match[0];
+      if (!advertised.has(tool)) {
+        report(`skill "${file}" names MCP tool "${tool}", which the MCP server does not advertise.`);
       }
     }
   }

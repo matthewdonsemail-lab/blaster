@@ -35,6 +35,7 @@ export const sequenceTables = {
       respectDoNotContact: v.boolean(),
       requireProfileForCountry: v.boolean(),
       dailyCapPerRecipient: v.number(),
+      pinSender: v.optional(v.boolean()),
     }),
     createdAt: v.number(),
   })
@@ -64,6 +65,9 @@ export const sequenceTables = {
     recipientId: v.string(),
     to: v.optional(v.string()),
     country: v.optional(v.string()),
+    /** The sender number pinned for this enrollment to maintain stable sender identity. */
+    pinnedSenderPhoneNumber: v.optional(v.string()),
+    pinnedSenderNumberId: v.optional(v.id("phoneNumbers")),
     /**
      * The workspace member responsible for this enrollment, recorded at enroll
      * time from the operator's actor. Inbound notifications for this enrollment

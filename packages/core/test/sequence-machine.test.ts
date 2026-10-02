@@ -7,7 +7,7 @@ import {
   type EnrollmentMachineInput,
   type SequenceEffect,
 } from "../src/pipeline/sequence/types.ts";
-import { nextAllowedSendAt, quietHoursWindow, timeZoneForState } from "../src/pipeline/sequence/helpers/quiet-hours.ts";
+import { nextAllowedSendAt, quietHoursWindow, timeZoneForNumber, timeZoneForState } from "../src/pipeline/sequence/helpers/quiet-hours.ts";
 
 /**
  * The sequencer lifecycle, driven end to end through a real XState actor.
@@ -336,4 +336,63 @@ describe("quiet hours", () => {
     expect(timeZoneForState("FL")).toMatchObject({ approximate: true });
     expect(timeZoneForState("ZZ")).toMatchObject({ timeZone: null });
   });
+
+  test("a sender that is not 10DLC ready parks the enrollment in awaiting_human and never sends", async () => {
+    const a = await run(
+      {
+        senderReadiness: {
+          ready: false,
+          reason: "missing-registration",
+        },
+      },
+      { type: "TICK", at: MIDDAY_UTC },
+    );
+    expect(stateOf(a)).toBe("awaiting_human");
+    expect(contextOf(a).lastSkipReason).toBe("sender-not-ready:missing-registration");
+    expect(contextOf(a).pendingEffect).toEqual({ type: "none" });
+  });
+
+  test("a sender that is verified ready proceeds to claim and send", async () => {
+    const a = await run(
+      {
+        senderReadiness: {
+          ready: true,
+          reason: null,
+        },
+      },
+      { type: "TICK", at: MIDDAY_UTC },
+    );
+    expect(stateOf(a)).toBe("claiming");
+    expect(contextOf(a).pendingEffect).toEqual({
+      type: "claim",
+      key: claimKeyFor("e-1", 0),
+    });
+  });
+
+  test("timeZoneForNumber derives time zone from area code when stateCode is omitted", () => {
+    // 215 is PA -> America/New_York
+    expect(timeZoneForNumber("+12154550123", undefined)).toMatchObject({
+      timeZone: "America/New_York",
+      approximate: false,
+    });
+    // 415 is CA -> America/Los_Angeles
+    expect(timeZoneForNumber("+14154550123", null)).toMatchObject({
+      timeZone: "America/Los_Angeles",
+      approximate: false,
+    });
+    // Explicit stateCode overrides area code
+    expect(timeZoneForNumber("+12154550123", "CA")).toMatchObject({
+      timeZone: "America/Los_Angeles",
+      approximate: false,
+    });
+    // Fictional 555 or toll-free returns null timeZone
+    expect(timeZoneForNumber("+15554550123", undefined)).toMatchObject({
+      timeZone: null,
+    });
+    expect(timeZoneForNumber("+18004550123", undefined)).toMatchObject({
+      timeZone: null,
+    });
+  });
 });
+
+

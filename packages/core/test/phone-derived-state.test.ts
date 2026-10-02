@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { derivePhoneState } from "../src/telnyx/messaging/helpers/phone-derived-state.ts";
+import { derivePhoneState, lookupAreaCodeState } from "../src/telnyx/messaging/helpers/phone-derived-state.ts";
 
 // Fixture numbers are chosen against the `areacodes` table, which is keyed on
 // the 3-digit area code. A number is only as geographic as its NPA: 215 is
@@ -96,3 +96,21 @@ describe("derivePhoneState", () => {
     expect(result.city).toBe("Charlotte Amalie");
   });
 });
+
+describe("lookupAreaCodeState", () => {
+  test("synchronously resolves area codes to USPS state code", () => {
+    expect(lookupAreaCodeState("+12154550123")).toBe("PA");
+    expect(lookupAreaCodeState("+19174550123")).toBe("NY");
+    expect(lookupAreaCodeState("+13124550123")).toBe("IL");
+    expect(lookupAreaCodeState("+14154550123")).toBe("CA");
+  });
+
+  test("returns null for toll-free, fictional, or empty numbers", () => {
+    expect(lookupAreaCodeState("+18004550123")).toBeNull();
+    expect(lookupAreaCodeState("+15554010123")).toBeNull();
+    expect(lookupAreaCodeState("")).toBeNull();
+    expect(lookupAreaCodeState(null)).toBeNull();
+    expect(lookupAreaCodeState(undefined)).toBeNull();
+  });
+});
+

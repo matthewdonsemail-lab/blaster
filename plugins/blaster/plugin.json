@@ -1,0 +1,12 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "blaster",
+  "version": "0.1.0",
+  "description": "Blaster: read the Twenty pipeline, resolve the Telnyx messaging profile for a recipient, and send jurisdiction-correct SMS. Bundles the blaster-mcp server and the operator skills that know when and how to use it.",
+  "author": {
+    "name": "matthewdonsemail-lab",
+    "url": "https://github.com/matthewdonsemail-lab/blaster"
+  },
+  "repository": "https://github.com/matthewdonsemail-lab/blaster",
+  "keywords": ["sms", "telnyx", "twenty-crm", "outbound", "mcp"]
+}

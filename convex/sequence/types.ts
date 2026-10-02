@@ -281,6 +281,8 @@ export interface RunContext {
     to?: string;
     country?: string;
     ownerMemberId?: string;
+    pinnedSenderPhoneNumber?: string;
+    pinnedSenderNumberId?: GenericId<"phoneNumbers">;
     cursor: number;
     status: EnrollmentStatus;
     enrolledAt: number;
@@ -296,6 +298,7 @@ export interface RunContext {
     status: string;
     fromNumber: string;
     numberProfileId?: string;
+    campaignId?: string;
     /** When set, the sender is chosen from this pool instead of `fromNumber`. */
     poolId?: string;
     options: {
@@ -303,6 +306,7 @@ export interface RunContext {
       respectDoNotContact: boolean;
       requireProfileForCountry: boolean;
       dailyCapPerRecipient: number;
+      pinSender?: boolean;
     };
   };
   steps: StepFields[];

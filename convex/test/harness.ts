@@ -30,12 +30,36 @@ export async function seedPhoneNumber(
   t: TestBackend,
   phoneNumber: string,
   messagingProfileId?: string,
+  compliance?: {
+    brandId?: string;
+    brandStatus?: string;
+    campaignId?: string;
+    campaignStatus?: string;
+    assignmentStatus?: string;
+    carrierProvisioningStatus?: string;
+    complianceCheckedAt?: number;
+  },
 ): Promise<string> {
+  const isUs = phoneNumber.startsWith("+1");
+  const defaultCompliance = isUs && messagingProfileId
+    ? {
+        brandId: "brand-test",
+        brandStatus: "APPROVED",
+        campaignId: "camp-test",
+        campaignStatus: "ACTIVE",
+        assignmentStatus: "assigned",
+        carrierProvisioningStatus: "provisioned",
+        complianceCheckedAt: Date.now(),
+        complianceSource: "telnyx",
+      }
+    : {};
   return t.run(async (ctx) =>
     ctx.db.insert("phoneNumbers", {
       phoneNumber,
       ...(messagingProfileId ? { messagingProfileId } : {}),
       status: "active",
+      ...defaultCompliance,
+      ...compliance,
     }),
   );
 }

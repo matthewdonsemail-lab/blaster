@@ -40,6 +40,21 @@ import AreaCodes from "areacodes";
 
 const areaCodes = new AreaCodes();
 
+/**
+ * Look up USPS 2-letter state code synchronously from a phone number's area code.
+ * Returns null if the number is toll-free, fictional, or not found in the NANP database.
+ */
+export function lookupAreaCodeState(input: string | null | undefined): string | null {
+  if (!input || !input.trim()) return null;
+  let stateCode: string | null = null;
+  areaCodes.get(input, (error: unknown, data: any) => {
+    if (!error && data && data.type !== "toll-free" && typeof data.stateCode === "string") {
+      stateCode = data.stateCode;
+    }
+  });
+  return stateCode;
+}
+
 /** The shape a geographic phone lookup returns. */
 export interface PhoneDerivedState {
   /** The ISO-3166 country the number belongs to, from the phone parser. */

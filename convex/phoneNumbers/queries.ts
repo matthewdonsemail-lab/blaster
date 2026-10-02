@@ -1,4 +1,4 @@
-import { query } from "../_generated/server.js";
+import { internalQuery, query } from "../_generated/server.js";
 import { v } from "convex/values";
 
 /**
@@ -25,5 +25,42 @@ export const getPhoneNumber = query({
       .query("phoneNumbers")
       .withIndex("phoneNumber", (q) => q.eq("phoneNumber", args.phoneNumber))
       .unique();
+  },
+});
+
+export const getPhoneNumberDoc = internalQuery({
+  args: { phoneNumber: v.string() },
+  handler: async (ctx, args) => {
+    return ctx.db
+      .query("phoneNumbers")
+      .withIndex("phoneNumber", (q) => q.eq("phoneNumber", args.phoneNumber))
+      .unique();
+  },
+});
+
+export const getCompliance = query({
+  args: { phoneNumber: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("phoneNumbers")
+      .withIndex("phoneNumber", (q) => q.eq("phoneNumber", args.phoneNumber))
+      .unique();
+    if (!row) return null;
+    const { checkDocReadiness } = await import("./compliance.js");
+    const readiness = checkDocReadiness(row);
+    return {
+      phoneNumber: row.phoneNumber,
+      brandId: row.brandId,
+      brandStatus: row.brandStatus,
+      campaignId: row.campaignId,
+      campaignStatus: row.campaignStatus,
+      campaignUseCase: row.campaignUseCase,
+      assignmentStatus: row.assignmentStatus,
+      carrierProvisioningStatus: row.carrierProvisioningStatus,
+      complianceCheckedAt: row.complianceCheckedAt,
+      complianceSource: row.complianceSource,
+      messagingProfileId: row.messagingProfileId,
+      readiness,
+    };
   },
 });

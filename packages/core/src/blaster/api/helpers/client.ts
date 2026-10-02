@@ -11,6 +11,7 @@
 import {
   BlasterApiError,
   classifyStatus,
+  type ActivateSequenceResult,
   type AddPoolNumberInput,
   type BatchSendResult,
   type ConversationMessageRow,
@@ -19,11 +20,14 @@ import {
   type CreatePoolInput,
   type EnrollResult,
   type ListConversationsQuery,
+  type PhoneComplianceResult,
   type PoolDetail,
   type PoolSummary,
   type ProspectField,
   type ProspectFilter,
   type ProspectSelection,
+  type RegisterSequenceInput,
+  type RegisterSequenceResult,
   type RemovePoolNumberInput,
   type ReorderPoolNumbersInput,
   type SendingNumber,
@@ -94,6 +98,12 @@ export interface BlasterApiClient {
   setSequencePool(input: SetSequencePoolInput): Promise<{ sequenceId: string }>;
   /** Sequences, for a pool-assignment picker. */
   listSequences(): Promise<SequenceOption[]>;
+  /** Register a sequence with steps and options in one validated call. */
+  registerSequence(input: RegisterSequenceInput): Promise<RegisterSequenceResult>;
+  /** Activate a sequence. */
+  activateSequence(sequenceId: string): Promise<ActivateSequenceResult>;
+  /** Check 10DLC compliance and carrier readiness snapshot for a phone number. */
+  getPhoneCompliance(phoneNumber: string): Promise<PhoneComplianceResult | null>;
 
   /** Everyone currently suppressed (a durable per-person do-not-contact). */
   listSuppressions(): Promise<SuppressionRow[]>;
@@ -331,6 +341,18 @@ export function createBlasterApiClient(options: BlasterApiClientOptions): Blaste
     async listSequences() {
       const body = await get<{ sequences: SequenceOption[] }>("/api/sequences", {});
       return body.sequences;
+    },
+
+    registerSequence(input) {
+      return post<RegisterSequenceResult>("/api/sequences", input);
+    },
+
+    activateSequence(sequenceId) {
+      return post<ActivateSequenceResult>(`/api/sequences/${encodeURIComponent(sequenceId)}/activate`, {});
+    },
+
+    getPhoneCompliance(phoneNumber) {
+      return get<PhoneComplianceResult | null>(`/api/phones/${encodeURIComponent(phoneNumber)}/compliance`, {});
     },
 
     async listSuppressions() {

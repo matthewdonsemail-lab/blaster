@@ -2,6 +2,7 @@ import type { QueryCtx } from "../_generated/server.js";
 import type { Doc, Id } from "../_generated/dataModel.js";
 import { availableAt, selectSender } from "../../packages/core/src/pipeline/pool/index.js";
 import { memberState, nonNegative } from "./utils.js";
+import { checkDocReadiness, type SenderReadiness } from "../phoneNumbers/compliance.js";
 
 /**
  * Context-bound reads for the pool domain.
@@ -15,14 +16,17 @@ import { memberState, nonNegative } from "./utils.js";
 /** One number to send from, resolved from its pool membership. */
 export interface PoolSender {
   phoneNumber: string;
+  phoneNumberId: Id<"phoneNumbers">;
   messagingProfileId?: string;
   order: number;
+  readiness: SenderReadiness;
 }
 
 /** What a pool can offer right now, and when it next can when it offers none. */
 export interface SenderAvailability {
   sender: PoolSender | null;
   soonestNextAvailableAt: number | null;
+  blockedReason?: "no-compliant-sender" | "pool-empty" | "pool-rate-limited" | null;
 }
 
 /**
@@ -53,12 +57,16 @@ export function policyOf(pool: Doc<"pools">) {
 export async function senderForRow(
   ctx: QueryCtx,
   row: Doc<"poolNumbers">,
+  now: number = Date.now(),
 ): Promise<PoolSender> {
   const number = await ctx.db.get("phoneNumbers", row.phoneNumberId);
+  const readiness = checkDocReadiness(number, now);
   return {
     phoneNumber: row.phoneNumber,
+    phoneNumberId: row.phoneNumberId,
     ...(number?.messagingProfileId ? { messagingProfileId: number.messagingProfileId } : {}),
     order: row.order,
+    readiness,
   };
 }
 
@@ -99,14 +107,39 @@ export async function availableSender(
   if (!pool || pool.status !== "active") return { sender: null, soonestNextAvailableAt: null };
 
   const rows = await membersOf(ctx, poolId);
-  const policy = policyOf(pool);
-  const selection = selectSender(rows.map(memberState), pool.cursor, now, policy);
-  if (selection.order === null) {
-    return { sender: null, soonestNextAvailableAt: selection.soonestNextAvailableAt };
+  const activeRows = rows.filter((r) => r.status === "active");
+  if (activeRows.length === 0) {
+    return { sender: null, soonestNextAvailableAt: null, blockedReason: "pool-empty" };
   }
-  const row = rows.find((candidate) => candidate.order === selection.order);
-  if (!row) return { sender: null, soonestNextAvailableAt: selection.soonestNextAvailableAt };
-  return { sender: await senderForRow(ctx, row), soonestNextAvailableAt: null };
+
+  // Filter only members whose pool state AND compliance snapshot permit sending.
+  const eligibleRows = await Promise.all(
+    activeRows.map(async (row) => ({
+      row,
+      sender: await senderForRow(ctx, row, now),
+    })),
+  );
+  const sendable = eligibleRows.filter(({ sender }) => sender.readiness.ready);
+  if (sendable.length === 0) {
+    return {
+      sender: null,
+      soonestNextAvailableAt: null,
+      blockedReason: "no-compliant-sender",
+    };
+  }
+
+  const policy = policyOf(pool);
+  const selection = selectSender(sendable.map(({ row }) => memberState(row)), pool.cursor, now, policy);
+  if (selection.order === null) {
+    return {
+      sender: null,
+      soonestNextAvailableAt: selection.soonestNextAvailableAt,
+      blockedReason: "pool-rate-limited",
+    };
+  }
+  const matched = sendable.find(({ row }) => row.order === selection.order);
+  if (!matched) return { sender: null, soonestNextAvailableAt: selection.soonestNextAvailableAt };
+  return { sender: matched.sender, soonestNextAvailableAt: null };
 }
 
 /**

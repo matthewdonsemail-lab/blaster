@@ -1,0 +1,8 @@
+{
+  "name": "blaster",
+  "description": "Blaster: read the Twenty pipeline, resolve the Telnyx messaging profile for a recipient, and send jurisdiction-correct SMS. Bundles the blaster-mcp server (24 tools) and the operator skills that know when and how to use them.",
+  "version": "0.1.0",
+  "author": {
+    "name": "matthewdonsemail-lab"
+  }
+}

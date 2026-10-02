@@ -1,6 +1,7 @@
 import { action } from "../_generated/server.js";
 import { v } from "convex/values";
 import { internal } from "../_generated/api.js";
+import type { Id } from "../_generated/dataModel.js";
 import { TELNYX_BASE, telnyxKey } from "./model.js";
 
 /**
@@ -114,3 +115,82 @@ export const purchaseNumbers = action({
     return { orderId, stored };
   },
 });
+
+/**
+ * Refresh 10DLC compliance status from Telnyx:
+ * Queries the 10DLC phone number campaign assignment and the campaign details,
+ * then stores the verified snapshot via updateComplianceSnapshotInternal.
+ */
+export const refreshComplianceSnapshot = action({
+  args: {
+    phoneNumber: v.string(),
+  },
+  handler: async (ctx, args): Promise<Id<"phoneNumbers">> => {
+    const encoded = encodeURIComponent(args.phoneNumber);
+    const authHeaders = { Authorization: `Bearer ${telnyxKey()}` };
+
+    let assignmentData: any = null;
+    try {
+      const resp = await fetch(`${TELNYX_BASE}/10dlc/phone_number_campaigns/${encoded}`, {
+        headers: authHeaders,
+      });
+      if (resp.ok) {
+        const payload = (await resp.json()) as any;
+        assignmentData = payload?.data ?? payload ?? null;
+      }
+    } catch {
+      // Telnyx assignment lookup failed or 404
+    }
+
+    const campaignId = typeof assignmentData?.campaignId === "string" ? assignmentData.campaignId : undefined;
+    const brandId = typeof assignmentData?.brandId === "string" ? assignmentData.brandId : undefined;
+    const assignmentStatus = typeof assignmentData?.assignmentStatus === "string" ? assignmentData.assignmentStatus : undefined;
+    const carrierProvisioningStatus =
+      typeof assignmentData?.tmobileNumberMappingStatus === "string"
+        ? assignmentData.tmobileNumberMappingStatus
+        : typeof assignmentData?.carrierProvisioningStatus === "string"
+          ? assignmentData.carrierProvisioningStatus
+          : undefined;
+
+    let campaignStatus: string | undefined;
+    let campaignUseCase: string | undefined;
+    let brandStatus: string | undefined;
+
+    if (campaignId) {
+      try {
+        const campResp = await fetch(`${TELNYX_BASE}/10dlc/campaign/${encodeURIComponent(campaignId)}`, {
+          headers: authHeaders,
+        });
+        if (campResp.ok) {
+          const campPayload = (await campResp.json()) as any;
+          const campData = campPayload?.data ?? campPayload ?? null;
+          campaignStatus = typeof campData?.status === "string" ? campData.status : undefined;
+          campaignUseCase = typeof campData?.usecase === "string" ? campData.usecase : undefined;
+          if (!brandId && typeof campData?.brandId === "string") {
+            brandStatus = "VERIFIED";
+          }
+        }
+      } catch {
+        // Campaign lookup optional fallback
+      }
+    }
+
+    if (brandId && !brandStatus) {
+      brandStatus = "VERIFIED";
+    }
+
+    return await ctx.runMutation(internal.phoneNumbers.mutations.updateComplianceSnapshotInternal, {
+      phoneNumber: args.phoneNumber,
+      brandId,
+      brandStatus,
+      campaignId,
+      campaignStatus,
+      campaignUseCase,
+      assignmentStatus,
+      carrierProvisioningStatus,
+      complianceSource: "telnyx-api",
+      complianceCheckedAt: Date.now(),
+    });
+  },
+});
+

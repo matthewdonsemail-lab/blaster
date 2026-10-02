@@ -36,6 +36,16 @@ export const phoneTables = {
     /** `pending` / `success` / `failure` from the number order. */
     status: v.optional(v.string()),
     purchasedAt: v.optional(v.number()),
+    /** Provider-verified 10DLC facts; null/unknown must never mean ready. */
+    brandId: v.optional(v.string()),
+    brandStatus: v.optional(v.string()),
+    campaignId: v.optional(v.string()),
+    campaignStatus: v.optional(v.string()),
+    campaignUseCase: v.optional(v.string()),
+    assignmentStatus: v.optional(v.string()),
+    carrierProvisioningStatus: v.optional(v.string()),
+    complianceCheckedAt: v.optional(v.number()),
+    complianceSource: v.optional(v.string()),
   })
     .index("phoneNumber", ["phoneNumber"])
     .index("orderId", ["orderId"])

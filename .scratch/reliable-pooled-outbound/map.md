@@ -36,6 +36,7 @@ and all three surfaces — and the decisions are made, not just the code written
 - [A Convex integration-test harness](issues/04-convex-test-harness.md): `convex/test/` runs the real functions against the real schema, holding the fixes for pool cursor/TOCTOU, campaignFor, and suppression.
 - [Thread identity under rotation](issues/02-thread-identity.md): keep the per-number threads as storage; the inbox gains a person-level grouping, and person-level facts (reply, STOP, suppression) are already peer-wide. Implemented on the branch as `groupBy: "person"` on `listConversations` (MCP `blaster_list_conversation_persons`, `GET /api/conversations?groupBy=person`, `blaster inbox list --person`).
 - [Limiter and pool budget relationship](issues/03-limiter-pool-relationship.md): the rate limiter is the hard ceiling, the pool paces at or under it, the period has one source, and disagreement resolves by refusing, never by sending.
+- [Dual-host plugin packaging](issues/06-dual-host-plugin.md): one `plugins/blaster/` tree carries both the Claude Code manifest (`.claude-plugin/` + `.mcp.json`) and the Codex portable manifest (root `plugin.json` + `mcp.json` + repo-scoped `marketplace.json`), sharing the same `skills/`. The send skill is command-only; the read/plan skills are model-invoked. Vendor pages committed under `docs/plugins/.claude/` and `docs/plugins/.codex/`.
 ## Not yet specified
 
 <!-- in-scope fog: can be sensed, not yet sharp enough to ticket -->

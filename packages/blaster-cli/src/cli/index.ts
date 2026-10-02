@@ -105,6 +105,7 @@ Read and act on the pipeline.
    numbers owned                Numbers already owned on the Telnyx account
    phones list                  List agencyPhones from Twenty (or --source telnyx)
    phones sync                  Sync phone rows between Convex and Twenty
+   phones compliance <number>   Check 10DLC compliance and carrier readiness
    conversation classify        Classify an inbound message against its thread
    conversation resolve         Classify, gate, and draft a styled reply
                                 (prompts interactively when values are missing)
@@ -113,6 +114,7 @@ Read and act on the pipeline.
    whoami                       Show the stored session and verify it still works
    capabilities                 Every capability and the surface that implements it
    sequence validate|preview    Build and dry run a message sequence
+   sequence activate <id>       Activate a sequence for sending
    pools list|show|create|...   Manage number pools and assign one to a sequence
    pool                          Interactive: build a pool, pick numbers, assign it
    suppress list|add|remove      The durable per-person do-not-contact list
@@ -135,6 +137,7 @@ const CAPABILITIES = [
   { id: "numbers.owned", cli: "blaster numbers owned", mcp: "blaster_list_numbers", http: "GET /api/numbers/owned" },
   { id: "phones.list", cli: "blaster phones list", mcp: "blaster_list_numbers", http: "GET /api/phones" },
   { id: "phones.sync", cli: "blaster phones sync", mcp: "blaster_sync_phones", http: "POST /api/phones/sync" },
+  { id: "phones.compliance", cli: "blaster phones compliance", mcp: "blaster_check_phone_compliance", http: "GET /api/phones/:number/compliance" },
   { id: "pools.list", cli: "blaster pools list", mcp: "blaster_list_pools", http: "GET /api/pools" },
   { id: "pools.new", cli: "blaster pool", mcp: "", http: "" },
   { id: "pools.get", cli: "blaster pools show", mcp: "blaster_get_pool", http: "GET /api/pools/:id" },
@@ -142,6 +145,8 @@ const CAPABILITIES = [
   { id: "pools.addNumber", cli: "blaster pools add-number", mcp: "blaster_add_pool_number", http: "POST /api/pools/:id/numbers" },
   { id: "pools.removeNumber", cli: "blaster pools remove-number", mcp: "blaster_remove_pool_number", http: "DELETE /api/pools/:id/numbers/:phoneNumber" },
   { id: "pools.reorder", cli: "blaster pools reorder", mcp: "blaster_reorder_pool", http: "PUT /api/pools/:id/numbers" },
+  { id: "sequences.create", cli: "blaster sequence new", mcp: "blaster_register_sequence", http: "POST /api/sequences" },
+  { id: "sequences.activate", cli: "blaster sequence activate", mcp: "blaster_activate_sequence", http: "POST /api/sequences/:id/activate" },
   { id: "sequences.setPool", cli: "blaster pools assign", mcp: "blaster_set_sequence_pool", http: "POST /api/sequences/:id/pool" },
   { id: "suppressions.list", cli: "blaster suppress list", mcp: "blaster_list_suppressions", http: "GET /api/suppressions" },
   { id: "suppressions.set", cli: "blaster suppress add|remove", mcp: "blaster_set_suppression", http: "POST /api/suppressions" },
@@ -261,6 +266,7 @@ async function main(): Promise<number> {
       const action = positional[0];
       if (action === "list") return await phonesList(flags, json);
       if (action === "sync") return await phonesSync(flags, json);
+      if (action === "compliance") return await phonesCompliance(positional[1], flags, json);
       console.error(`blaster phones: unknown action "${action}"\n${PHONES_USAGE}`);
       return 1;
     }
@@ -306,6 +312,7 @@ async function main(): Promise<number> {
       if (action === "validate" || action === "check") return await sequenceValidate(flags, json);
       if (action === "preview") return await sequencePreview(flags, json);
       if (action === "enroll") return await sequenceEnroll(positional[1], flags, json);
+      if (action === "activate") return await sequenceActivate(positional[1], flags, json);
       // Everything else is the recorded-draft lifecycle: new/list/show/edit/run/rm.
       const known = ["new", "create", "list", "ls", "show", "edit", "run", "dry-run", "rm", "delete"];
       if (action !== undefined && known.includes(action)) {
@@ -489,6 +496,44 @@ async function sequenceEnroll(
   }
 }
 
+async function sequenceActivate(
+  sequenceId: string | undefined,
+  flags: Map<string, string | boolean>,
+  json: boolean,
+): Promise<number> {
+  const id = sequenceId ?? flagText(flags, "id");
+  if (!id) {
+    console.error("blaster sequence activate: sequence id is required\n  blaster sequence activate <sequence-id>");
+    return 1;
+  }
+  const root = process.cwd();
+  const home = loadHome(root);
+  const apiUrl = home.config.apiUrl ?? Object.keys(home.sessions)[0] ?? null;
+  if (!apiUrl) {
+    console.error('blaster sequence activate: no signed-in API. Run "blaster login" first.');
+    return 1;
+  }
+  const session = await ensureLiveSession(root, apiUrl);
+  if (!session) {
+    console.error(`blaster sequence activate: no live session for ${apiUrl}. Run "blaster login" first.`);
+    return 1;
+  }
+  const client = createBlasterApiClient({ baseUrl: apiUrl, accessToken: session.accessToken });
+  try {
+    const result = await client.activateSequence(id);
+    if (json) {
+      console.log(asJson(result));
+    } else {
+      console.log(`Sequence ${result.sequenceId} is now ${result.status}.`);
+    }
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`blaster sequence activate: ${message}`);
+    return 1;
+  }
+}
+
 async function sequencePreview(flags: Map<string, string | boolean>, json: boolean): Promise<number> {
   const draft = await draftFrom(flags);
   if (!draft) return 1;
@@ -537,7 +582,9 @@ const PHONES_USAGE = `Usage: blaster phones <action>
       List phone rows. Twenty agencyPhones by default, Telnyx account with --source telnyx.
   sync --direction <twenty-to-convex|convex-to-twenty> [--phones <json>]
       twenty-to-convex prints Twenty rows to store via the Convex importTwentyPhones
-      mutation; convex-to-twenty upserts the given Convex rows into Twenty.`;
+      mutation; convex-to-twenty upserts the given Convex rows into Twenty.
+  compliance <number>
+      Check 10DLC brand, campaign assignment, and carrier provisioning status.`;
 
 const CONVERSATION_USAGE = `Usage: blaster conversation <action>
 
@@ -727,6 +774,56 @@ async function phonesSync(flags: Map<string, string | boolean>, json: boolean): 
       : `Sync: ${upserted} created in Twenty, ${plan.toStoreInConvex.length} to store in Convex.`,
   );
   return 0;
+}
+
+async function phonesCompliance(
+  phoneNumber: string | undefined,
+  flags: Map<string, string | boolean>,
+  json: boolean,
+): Promise<number> {
+  const number = phoneNumber ?? flagText(flags, "number");
+  if (!number) {
+    console.error("blaster phones compliance: phone number is required\n  blaster phones compliance <E.164>");
+    return 1;
+  }
+  const root = process.cwd();
+  const home = loadHome(root);
+  const apiUrl = home.config.apiUrl ?? Object.keys(home.sessions)[0] ?? null;
+  if (!apiUrl) {
+    console.error('blaster phones compliance: no signed-in API. Run "blaster login" first.');
+    return 1;
+  }
+  const session = await ensureLiveSession(root, apiUrl);
+  if (!session) {
+    console.error(`blaster phones compliance: no live session for ${apiUrl}. Run "blaster login" first.`);
+    return 1;
+  }
+  const client = createBlasterApiClient({ baseUrl: apiUrl, accessToken: session.accessToken });
+  try {
+    const compliance = await client.getPhoneCompliance(number);
+    if (!compliance) {
+      console.error(`blaster phones compliance: phone ${number} not found in phone ledger`);
+      return 1;
+    }
+    if (json) {
+      console.log(asJson(compliance));
+    } else {
+      console.log(`Phone: ${compliance.phoneNumber}`);
+      console.log(`  Readiness:    ${compliance.readiness.ready ? "ready" : "blocked"}${compliance.readiness.reason ? ` (${compliance.readiness.reason})` : ""}`);
+      console.log(`  Brand:        ${compliance.brandStatus ?? "none"}${compliance.brandId ? ` (${compliance.brandId})` : ""}`);
+      console.log(`  Campaign:     ${compliance.campaignStatus ?? "none"}${compliance.campaignId ? ` (${compliance.campaignId})` : ""}`);
+      console.log(`  Assignment:   ${compliance.assignmentStatus ?? "none"}`);
+      console.log(`  Provisioning: ${compliance.carrierProvisioningStatus ?? "none"}`);
+      if (compliance.complianceCheckedAt) {
+        console.log(`  Checked:      ${new Date(compliance.complianceCheckedAt).toISOString()}`);
+      }
+    }
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`blaster phones compliance: ${message}`);
+    return 1;
+  }
 }
 
 /** History turns arrive as JSON; ids and timestamps are filled in. */

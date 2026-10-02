@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "blaster": {
+      "command": "pnpm",
+      "args": ["--filter", "@blaster/mcp", "exec", "blaster-mcp"],
+      "env": {
+        "TWENTY_BASE_URL": "${TWENTY_BASE_URL}",
+        "TWENTY_API_KEY": "${TWENTY_API_KEY}",
+        "TELNYX_API_KEY": "${TELNYX_API_KEY}",
+        "TELNYX_MESSAGING_PROFILE_ID": "${TELNYX_MESSAGING_PROFILE_ID}",
+        "TELNYX_MESSAGING_PROFILES": "${TELNYX_MESSAGING_PROFILES}",
+        "CONVEX_URL": "${CONVEX_URL}"
+      }
+    }
+  }
+}

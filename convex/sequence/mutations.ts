@@ -33,6 +33,7 @@ export const createSequence = mutation({
   args: {
     name: v.string(),
     fromNumber: v.string(),
+    poolId: v.optional(v.id("pools")),
     numberProfileId: v.optional(v.string()),
     campaignId: v.optional(v.string()),
     options: v.optional(
@@ -41,6 +42,7 @@ export const createSequence = mutation({
         respectDoNotContact: v.boolean(),
         requireProfileForCountry: v.boolean(),
         dailyCapPerRecipient: v.number(),
+        pinSender: v.optional(v.boolean()),
       }),
     ),
     steps: v.array(stepFieldsValidator),
@@ -49,15 +51,19 @@ export const createSequence = mutation({
     const draft = draftFromArgs(args);
     const problems = validateDraft(draft);
     if (problems.length > 0) {
-      // Thrown rather than returned: a half-built sequence is never stored, and
-      // a caller that ignored the validation would otherwise get one anyway.
       throw new Error(`invalid sequence: ${problems.map((p) => `${p.field} ${p.problem}`).join(" ")}`);
+    }
+
+    if (args.poolId) {
+      const pool = await ctx.db.get("pools", args.poolId);
+      if (!pool) throw new Error(`unknown pool ${args.poolId}`);
     }
 
     const sequenceId = await ctx.db.insert("sequences", {
       name: draft.name,
       status: "draft",
       fromNumber: draft.fromNumber,
+      poolId: args.poolId,
       numberProfileId: draft.numberProfileId,
       campaignId: draft.campaignId,
       stepCount: draft.steps.length,
@@ -83,6 +89,19 @@ export const setSequenceStatus = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    const sequence = await ctx.db.get("sequences", args.sequenceId);
+    if (!sequence) throw new Error(`unknown sequence ${args.sequenceId}`);
+    if (args.status === "active") {
+      if (sequence.stepCount <= 0) {
+        throw new Error("cannot activate a sequence with no steps");
+      }
+      if (sequence.poolId) {
+        const pool = await ctx.db.get("pools", sequence.poolId);
+        if (!pool || pool.status !== "active") {
+          throw new Error("cannot activate sequence: assigned pool is not active");
+        }
+      }
+    }
     await ctx.db.patch("sequences", args.sequenceId, { status: args.status });
     return args.sequenceId;
   },
@@ -321,8 +340,17 @@ export const completeEnrollment = internalMutation({
  * where they are.
  */
 export const claimSendCapacity = internalMutation({
-  args: { fromNumber: v.string() },
+  args: {
+    fromNumber: v.string(),
+    campaignId: v.optional(v.string()),
+    brandId: v.optional(v.string()),
+  },
   handler: async (ctx, args): Promise<SendCapacity> => {
-    return await claimCapacity(ctx, { fromNumber: args.fromNumber });
+    return await claimCapacity(ctx, {
+      fromNumber: args.fromNumber,
+      campaignId: args.campaignId,
+      brandId: args.brandId,
+    });
   },
 });
+
