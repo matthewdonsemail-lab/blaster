@@ -765,11 +765,24 @@ pools.delete("/sequences/:id", requireOperator, async (c) => {
   return c.json(result.value);
 });
 
+/** Verified principal owner id derived strictly from Twenty OAuth claims. */
+function principalOwnerId(c: Context): string | null {
+  const member = c.get("operator")?.member;
+  if (member?.workspaceMemberId) return member.workspaceMemberId;
+  if (member?.userId) return member.userId;
+  const username = c.get("operator")?.username;
+  if (typeof username === "string" && username.trim() !== "") return username.trim();
+  return null;
+}
+
 /**
- * Resumable sequence drafts stored directly in Convex.
+ * Resumable sequence drafts stored directly in Convex, strictly gated by Twenty OAuth.
  */
 pools.get("/sequence-drafts", requireOperator, async (c) => {
-  const ownerMemberId = operatorIdentity(c).workspaceMemberId ?? undefined;
+  const ownerMemberId = principalOwnerId(c);
+  if (!ownerMemberId) {
+    return c.json({ error: "A verified Twenty operator identity is required to list drafts" }, 403);
+  }
   const result = await listSequenceDrafts({ ownerMemberId });
   if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
   if (result.status === "failed") return c.json({ error: "Failed to list sequence drafts", detail: result.error }, 502);
@@ -781,7 +794,16 @@ pools.post("/sequence-drafts", requireOperator, async (c) => {
   if (!body || typeof body.name !== "string" || body.name.trim() === "") {
     return c.json({ error: "name is required" }, 400);
   }
-  const ownerMemberId = operatorIdentity(c).workspaceMemberId ?? undefined;
+  const ownerMemberId = principalOwnerId(c);
+  if (!ownerMemberId) {
+    return c.json({ error: "A verified Twenty operator identity is required to save drafts" }, 403);
+  }
+  if (body.draftId && typeof body.draftId === "string") {
+    const existing = await getSequenceDraft(body.draftId);
+    if (existing.status === "ok" && existing.value?.ownerMemberId && existing.value.ownerMemberId !== ownerMemberId) {
+      return c.json({ error: "Access denied: you do not own this sequence draft" }, 403);
+    }
+  }
   const result = await saveSequenceDraft({
     draftId: typeof body.draftId === "string" ? body.draftId : undefined,
     name: body.name,
@@ -800,14 +822,29 @@ pools.post("/sequence-drafts", requireOperator, async (c) => {
 });
 
 pools.get("/sequence-drafts/:id", requireOperator, async (c) => {
+  const ownerMemberId = principalOwnerId(c);
+  if (!ownerMemberId) {
+    return c.json({ error: "A verified Twenty operator identity is required to read drafts" }, 403);
+  }
   const result = await getSequenceDraft(c.req.param("id"));
   if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
   if (result.status === "failed") return c.json({ error: "Failed to read sequence draft", detail: result.error }, 502);
   if (result.value === null) return c.json({ error: "Unknown sequence draft" }, 404);
+  if (result.value.ownerMemberId && result.value.ownerMemberId !== ownerMemberId) {
+    return c.json({ error: "Access denied: you do not own this sequence draft" }, 403);
+  }
   return c.json(result.value);
 });
 
 pools.delete("/sequence-drafts/:id", requireOperator, async (c) => {
+  const ownerMemberId = principalOwnerId(c);
+  if (!ownerMemberId) {
+    return c.json({ error: "A verified Twenty operator identity is required to discard drafts" }, 403);
+  }
+  const existing = await getSequenceDraft(c.req.param("id"));
+  if (existing.status === "ok" && existing.value?.ownerMemberId && existing.value.ownerMemberId !== ownerMemberId) {
+    return c.json({ error: "Access denied: you do not own this sequence draft" }, 403);
+  }
   const result = await discardSequenceDraft(c.req.param("id"));
   if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
   if (result.status === "failed") return c.json({ error: "Failed to discard sequence draft", detail: result.error }, 502);
@@ -815,6 +852,14 @@ pools.delete("/sequence-drafts/:id", requireOperator, async (c) => {
 });
 
 pools.post("/sequence-drafts/:id/commit", requireOperator, async (c) => {
+  const ownerMemberId = principalOwnerId(c);
+  if (!ownerMemberId) {
+    return c.json({ error: "A verified Twenty operator identity is required to commit drafts" }, 403);
+  }
+  const existing = await getSequenceDraft(c.req.param("id"));
+  if (existing.status === "ok" && existing.value?.ownerMemberId && existing.value.ownerMemberId !== ownerMemberId) {
+    return c.json({ error: "Access denied: you do not own this sequence draft" }, 403);
+  }
   const result = await commitSequenceDraft(c.req.param("id"));
   if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
   if (result.status === "failed") return c.json({ error: "Failed to commit sequence draft", detail: result.error }, 502);
@@ -928,7 +973,7 @@ app.get("/api/env", (c) => {
 });
 
 /** The pipeline breakdown plus the notifications it currently triggers. */
-app.get("/api/breakdown", async (c) => {
+app.get("/api/breakdown", requireOperator, async (c) => {
   // A missing credential is a configuration problem, not a provider failure.
   // Reporting it as 503 with the names says what to do; a 500 does not.
   const unconfigured = ["TWENTY_BASE_URL", "TWENTY_API_KEY"].filter((name) => !process.env[name]);
@@ -951,7 +996,7 @@ app.get("/api/breakdown", async (c) => {
 });
 
 /** Which messaging profile a recipient resolves to, and why. */
-app.get("/api/messaging/profile", (c) => {
+app.get("/api/messaging/profile", requireOperator, (c) => {
   const to = c.req.query("to");
   const recipientCountry = c.req.query("country");
   const resolution = resolveMessagingProfile(process.env, { to, recipientCountry });
@@ -959,7 +1004,7 @@ app.get("/api/messaging/profile", (c) => {
 });
 
 /** The profiles Telnyx actually has, so configuration gaps are visible. */
-app.get("/api/messaging/profiles", async (c) => {
+app.get("/api/messaging/profiles", requireOperator, async (c) => {
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) return c.json({ error: "TELNYX_API_KEY is not configured" }, 500);
   try {
@@ -1047,7 +1092,7 @@ app.post("/api/messages/send", requireOperator, async (c) => {
  * every problem at once rather than one per round trip. The rules themselves
  * live in packages/core and are shared with the CLI and the MCP server.
  */
-app.post("/api/sequences/validate", async (c) => {
+app.post("/api/sequences/validate", requireOperator, async (c) => {
   const body = (await c.req.json().catch(() => null)) as Partial<SequenceDraft> | null;
   if (!body) return c.json({ error: "a JSON body is required" }, 400);
 
@@ -1074,7 +1119,7 @@ app.post("/api/sequences/validate", async (c) => {
  * This is the check an operator wants before turning a sequence on, and it
  * needs no Telnyx credentials because it never sends.
  */
-app.post("/api/sequences/preview", async (c) => {
+app.post("/api/sequences/preview", requireOperator, async (c) => {
   const body = (await c.req.json().catch(() => null)) as {
     options?: Partial<typeof DEFAULT_OPTIONS>;
     steps?: SequenceStepDraft[];
@@ -1245,7 +1290,7 @@ app.get("/api/auth/me", async (c) => {
  * upserts each number there, and the sync route moves rows in either
  * direction keyed on the E.164 number.
  */
-app.get("/api/numbers/search", async (c) => {
+app.get("/api/numbers/search", requireOperator, async (c) => {
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) return c.json({ error: "TELNYX_API_KEY is not configured" }, 500);
   const limitRaw = c.req.query("limit");
@@ -1268,7 +1313,7 @@ app.get("/api/numbers/search", async (c) => {
   }
 });
 
-app.post("/api/numbers/purchase", async (c) => {
+app.post("/api/numbers/purchase", requireOperator, async (c) => {
   const body = (await c.req.json().catch(() => null)) as {
     phoneNumbers?: string[];
     phoneNumber?: string;
@@ -1319,7 +1364,7 @@ app.post("/api/numbers/purchase", async (c) => {
 });
 
 /** Numbers already owned on the Telnyx account, with messaging bindings. */
-app.get("/api/numbers/owned", async (c) => {
+app.get("/api/numbers/owned", requireOperator, async (c) => {
   const apiKey = process.env.TELNYX_API_KEY;
   if (!apiKey) return c.json({ error: "TELNYX_API_KEY is not configured" }, 500);
   try {
@@ -1335,7 +1380,7 @@ app.get("/api/numbers/owned", async (c) => {
  * `?source=twenty` (default) reads Twenty `agencyPhones`;
  * `?source=telnyx` reads the Telnyx account instead.
  */
-app.get("/api/phones", async (c) => {
+app.get("/api/phones", requireOperator, async (c) => {
   const source = c.req.query("source") ?? "twenty";
   try {
     if (source === "telnyx") {
@@ -1358,7 +1403,7 @@ app.get("/api/phones", async (c) => {
  * or call with `direction=twenty-to-convex` to receive the Twenty rows the
  * caller should store via the Convex `importTwentyPhones` mutation.
  */
-app.post("/api/phones/sync", async (c) => {
+app.post("/api/phones/sync", requireOperator, async (c) => {
   const body = (await c.req.json().catch(() => null)) as {
     direction?: "convex-to-twenty" | "twenty-to-convex";
     phones?: Array<Record<string, unknown>>;

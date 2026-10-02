@@ -271,8 +271,8 @@ async function newDraft(ctx: SequenceContext): Promise<number> {
     let existingDrafts: SequenceDraftRecord[] = [];
     try {
       existingDrafts = await live.client.listSequenceDrafts();
-    } catch {
-      // If listing drafts fails or unconfigured, proceed with blank draft
+    } catch (err) {
+      note("Notice", `Could not check for existing drafts: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     if (existingDrafts.length > 0) {

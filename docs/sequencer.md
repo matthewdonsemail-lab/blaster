@@ -177,8 +177,8 @@ compute. `stateCode` is optional but is what makes the quiet-hours column
 meaningful; without it a US number cannot be placed and the row is reported as
 unplaceable.
 
-Drafts live in `.blaster/sequences.json`, gitignored with the session file. They
-are local working material: a draft becomes real when the runner picks it up.
+Drafts live directly in Convex in the `sequenceDrafts` table. They are
+resumable working material across sessions until committed into runnable sequences.
 
 ## Finishing it, in order
 

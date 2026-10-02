@@ -298,7 +298,7 @@ blaster sequence run "Spring outreach"   # dry run against the recorded draft
 blaster sequence rm "Spring outreach"    # forget it
 ```
 
-Recorded drafts live in `.blaster/sequences.json`, next to the session file.
+Unfinished builder drafts and committed sequences live directly in Convex.
 `run` is a dry run over the recorded draft: it prints the compliance plan and
 names what the runner still needs. See [docs/sequencer.md](docs/sequencer.md)
 for what is finished, what is not, and the exact gaps.
