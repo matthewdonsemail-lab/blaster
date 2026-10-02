@@ -274,7 +274,31 @@ Rules, in order of severity:
   imports from the domain it actually depends on:
   `import type { EnrollmentStatus } from "./sequence/index.js"`.
 
+### R13. Standard Convex function operation naming
+Public queries and mutations follow standard resource-oriented operation naming
+(matching [Google AIP-131–136](https://google.aip.dev/131) and the shared client):
+
+- **Queries**:
+  - `list<Resources>` for collections (`listPools`, `listSequences`, `listSequenceDrafts`).
+  - `get<Resource>` for single-item lookups (`getPool`, `getSequence`, `getSequenceDraft`).
+    Avoid redundant suffixes like `ById` (e.g. `getSequenceById` is forbidden; use `getSequence`).
+- **Mutations**:
+  - `create<Resource>` (`createPool`, `createSequence`).
+  - `delete<Resource>` (`deleteSequence`).
+  - Lifecycle transitions: `<verb><Resource>` (`commitSequenceDraft`, `discardSequenceDraft`,
+    `saveSequenceDraft`, `setSequencePool`, `setSequenceStatus`).
+
+### R14. Strict separation of function kinds per file
+Enforces R4 strictly:
+- `queries.ts` exports only queries (`query`, `internalQuery`).
+- `mutations.ts` exports only mutations (`mutation`, `internalMutation`).
+- `actions.ts` exports only actions (`action`, `internalAction`).
+A query must never be exported from `mutations.ts`, and a mutation must never be
+exported from `queries.ts`. Placing a query in `mutations.ts` misleads consumers
+and breaks automated inspection gates.
+
 ## Recommendations (guidance, not gated)
+
 
 These are documented judgment calls. The gate does not check them because no
 script can evaluate them without understanding intent.

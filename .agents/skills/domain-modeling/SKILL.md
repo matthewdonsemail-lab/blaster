@@ -72,3 +72,11 @@ Only offer to create an ADR when all three are true:
 3. **The result of a real trade-off**: there were genuine alternatives and you picked one for specific reasons
 
 If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](./ADR-FORMAT.md).
+
+### Maintain cross-surface capability vocabulary
+
+When defining or modifying domain operations:
+- Ensure each capability has **one canonical operation name** across Convex, Hono HTTP, shared client, CLI, and MCP.
+- Use standard REST verbs and resource naming per `docs/naming-conventions.md` and `docs/convex-naming-conventions.md`.
+- Register the capability in `@blaster/core`'s `CAPABILITY_REGISTRY` and ensure `scripts/check-surfaces.mjs` passes.
+

@@ -6,6 +6,7 @@
  */
 
 export * from "./blaster/api/index.ts";
+export * from "./blaster/capabilities/index.ts";
 export * from "./ai/analysis/index.ts";
 export * from "./bark/index.ts";
 export * from "./twenty/client/index.ts";

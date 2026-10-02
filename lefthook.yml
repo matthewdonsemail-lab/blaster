@@ -36,8 +36,11 @@ pre-push:
     # The capability registry, the MCP tools, and the HTTP routes must agree.
     # A capability that names a surface the build does not have fails here, so
     # the registry cannot drift the way it had.
+    surfaces-self-test:
+      run: pnpm run check:surfaces:self-test
+
     surfaces:
-      glob: "{packages/blaster-cli/src/cli/index.ts,packages/blaster-mcp/src/mcp/index.ts,apps/api/src/index.ts,docs/pools.md,README.md,plugins/blaster/**/*.md,.agents/plugins/marketplace.json}"
+      glob: "{packages/core/src/blaster/capabilities/**/*.ts,packages/blaster-cli/src/cli/index.ts,packages/blaster-mcp/src/mcp/index.ts,apps/api/src/index.ts,docs/pools.md,README.md,plugins/blaster/**/*.md,.agents/plugins/marketplace.json}"
       run: pnpm run check:surfaces
 
     env-manifest:

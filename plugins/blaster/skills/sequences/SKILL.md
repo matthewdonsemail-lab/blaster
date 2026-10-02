@@ -14,8 +14,8 @@ list of steps. Build it, dry-run it, then turn it on.
   and shows who would receive the next step and who is skipped, with the reason.
   It sends nothing - it is the compliance plan before anything is turned on.
 - The recorded-draft lifecycle (`blaster sequence new|list|show|edit|run|rm`
-  in the CLI) keeps a draft in `.blaster/sequences.json` so it can be built
-  once and reused.
+  in the CLI) checkpoints drafts directly in Convex (`sequenceDrafts`) so they can
+  be built, resumed, and committed across sessions without local state drift.
 
 ## Options
 

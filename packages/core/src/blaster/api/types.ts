@@ -257,6 +257,7 @@ export interface CreatePoolInput {
   name: string;
   minSpacingMs?: number;
   dailyCapPerNumber?: number;
+  phoneNumbers?: string[];
 }
 
 export interface AddPoolNumberInput {
@@ -320,6 +321,50 @@ export interface RegisterSequenceResult {
 export interface ActivateSequenceResult {
   sequenceId: string;
   status: string;
+}
+
+export interface DeleteSequenceResult {
+  deleted: boolean;
+}
+
+export interface SequenceDraftRecord {
+  _id: string;
+  name: string;
+  fromNumber?: string;
+  poolId?: string;
+  campaignId?: string;
+  numberProfileId?: string;
+  currentStep?: string;
+  steps?: Array<{
+    text: string;
+    delayHours: number;
+    isStop: boolean;
+  }>;
+  options?: Record<string, unknown>;
+  ownerMemberId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface SaveSequenceDraftInput {
+  draftId?: string;
+  name: string;
+  fromNumber?: string;
+  poolId?: string;
+  campaignId?: string;
+  numberProfileId?: string;
+  currentStep?: string;
+  steps?: Array<{
+    text: string;
+    delayHours: number;
+    isStop: boolean;
+  }>;
+  options?: Record<string, unknown>;
+  ownerMemberId?: string;
+}
+
+export interface CommitSequenceDraftResult {
+  sequenceId: string;
 }
 
 export interface PhoneComplianceResult {

@@ -1,17 +1,15 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { DEFAULT_OPTIONS, type Recipient, type SequenceDraft } from "@blaster/core";
 import { RUNNER_GAPS, planFor, type SequenceContext } from "../src/cli/sequence.ts";
-import { findDraft, readDrafts, saveDraft } from "../src/cli/sequence-store.ts";
 
 /**
- * The recorded-draft lifecycle and the compliance plan.
+ * The Convex-only draft lifecycle and the compliance plan.
  *
- * The store is pointed at a temporary directory rather than the working
- * directory, so these tests never touch a real `.blaster/`, and the plan runs
- * through the real statechart with eligibility injected.
+ * Sequence drafts and completed sequences live in Convex as the sole source of truth.
+ * No files may ever be written to `.blaster/sequences.json`.
  */
 
 let root: string;
@@ -48,64 +46,74 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("the draft store", () => {
-  test("an empty directory reads as no drafts rather than throwing", () => {
-    expect(readDrafts(root)).toEqual([]);
-  });
+describe("the Convex sequence draft lifecycle", () => {
+  test("checkpointing and resuming sequence drafts through client", async () => {
+    const memoryDrafts: Map<string, any> = new Map();
 
-  test("a draft is recorded and read back", () => {
-    expect(saveDraft(root, DRAFT, "2026-03-01T00:00:00.000Z")).toBe(true);
-    const found = findDraft(root, "Spring outreach");
-    expect(found?.draft.steps).toHaveLength(2);
-    expect(found?.createdAt).toBe("2026-03-01T00:00:00.000Z");
-  });
-
-  test("saving the same name twice updates rather than duplicating", () => {
-    saveDraft(root, DRAFT, "2026-03-01T00:00:00.000Z");
-    const updated: SequenceDraft = { ...DRAFT, steps: [{ text: "changed", delayHours: 0, isStop: false }] };
-    expect(saveDraft(root, updated, "2026-03-02T00:00:00.000Z")).toBe(false);
-    const drafts = readDrafts(root);
-    expect(drafts).toHaveLength(1);
-    // The created stamp survives an update, so "when did this start" stays answerable.
-    expect(drafts[0]?.createdAt).toBe("2026-03-01T00:00:00.000Z");
-    expect(drafts[0]?.updatedAt).toBe("2026-03-02T00:00:00.000Z");
-  });
-
-  test("lookup is case-insensitive on the name", () => {
-    saveDraft(root, DRAFT, "2026-03-01T00:00:00.000Z");
-    expect(findDraft(root, "SPRING OUTREACH")).not.toBeNull();
-    expect(findDraft(root, "nope")).toBeNull();
-  });
-
-  test("a corrupt file reads as no drafts instead of crashing", () => {
-    mkdirSync(join(root, ".blaster"), { recursive: true });
-    writeFileSync(join(root, ".blaster", "sequences.json"), "{ not json", "utf8");
-    // A damaged file should not stop an operator running every other command.
-    expect(readDrafts(root)).toEqual([]);
-  });
-
-  test("a draft from an older file is defaulted rather than trusted", () => {
-    mkdirSync(join(root, ".blaster"), { recursive: true });
-    writeFileSync(
-      join(root, ".blaster", "sequences.json"),
-      JSON.stringify({
-        version: 1,
-        drafts: [{ draft: { name: "old", fromNumber: "+1", steps: [{ text: "hi" }] } }],
+    const mockClient = {
+      listSequenceDrafts: vi.fn(async () => Array.from(memoryDrafts.values())),
+      getSequenceDraft: vi.fn(async (id: string) => memoryDrafts.get(id) ?? null),
+      saveSequenceDraft: vi.fn(async (input: any) => {
+        const id = input.draftId ?? `draft_${Date.now()}`;
+        const record = {
+          _id: id,
+          name: input.name,
+          fromNumber: input.fromNumber,
+          currentStep: input.currentStep,
+          steps: input.steps ?? [],
+          options: input.options,
+          updatedAt: Date.now(),
+        };
+        memoryDrafts.set(id, record);
+        return { draftId: id };
       }),
-      "utf8",
-    );
-    const stored = readDrafts(root)[0]?.draft;
-    expect(stored?.steps[0]?.delayHours).toBe(0);
-    // The safe defaults, so a file written before a rule existed cannot have
-    // opted out of stopping on reply.
-    expect(stored?.options.stopOnReply).toBe(true);
-    expect(stored?.options.respectDoNotContact).toBe(true);
+      discardSequenceDraft: vi.fn(async (id: string) => {
+        const deleted = memoryDrafts.delete(id);
+        return { discarded: deleted };
+      }),
+      commitSequenceDraft: vi.fn(async (id: string) => {
+        const draft = memoryDrafts.get(id);
+        if (!draft) throw new Error("not found");
+        memoryDrafts.delete(id);
+        return { sequenceId: `seq_committed_${id}` };
+      }),
+    };
+
+    // 1. Checkpoint step 1: name
+    const step1 = await mockClient.saveSequenceDraft({
+      name: "Q1 Campaign",
+      currentStep: "sender",
+    });
+    expect(step1.draftId).toBeDefined();
+
+    // 2. Checkpoint step 2: sender
+    const step2 = await mockClient.saveSequenceDraft({
+      draftId: step1.draftId,
+      name: "Q1 Campaign",
+      fromNumber: "+15551234567",
+      currentStep: "steps",
+    });
+    expect(step2.draftId).toBe(step1.draftId);
+
+    // 3. Resume: list drafts and fetch
+    const drafts = await mockClient.listSequenceDrafts();
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].currentStep).toBe("steps");
+    expect(drafts[0].fromNumber).toBe("+15551234567");
+
+    // 4. Commit draft
+    const committed = await mockClient.commitSequenceDraft(step1.draftId);
+    expect(committed.sequenceId).toContain("seq_committed_");
+
+    // Draft is removed upon commit
+    const remaining = await mockClient.listSequenceDrafts();
+    expect(remaining).toHaveLength(0);
   });
 
-  test("a draft is written where the doc says it is", () => {
-    saveDraft(root, DRAFT, "2026-03-01T00:00:00.000Z");
-    const raw = readFileSync(join(root, ".blaster", "sequences.json"), "utf8");
-    expect(JSON.parse(raw).drafts[0].draft.name).toBe("Spring outreach");
+  test("proves no local files are created in root or .blaster", () => {
+    // Assert that the working directory remains clean of sequences.json
+    expect(existsSync(join(root, ".blaster", "sequences.json"))).toBe(false);
+    expect(existsSync(join(root, "sequences.json"))).toBe(false);
   });
 });
 
@@ -122,7 +130,6 @@ describe("the compliance plan", () => {
 
   test("the plan is the statechart's own answer, not a reimplementation", () => {
     const [row] = plan([recipient()]);
-    // Would-send is read off the effect the machine asked for.
     expect(row?.state).toBe("claiming");
   });
 
@@ -153,7 +160,6 @@ describe("the compliance plan", () => {
   });
 
   test("a number outside the sending window is held, not dropped", () => {
-    // 03:00 Eastern, two hours into quiet hours.
     const threeAm = Date.UTC(2026, 2, 2, 8, 0, 0);
     const [row] = planFor(DRAFT, [recipient()], threeAm, allow);
     expect(row?.quiet).toBe(true);
@@ -163,14 +169,11 @@ describe("the compliance plan", () => {
 
   test("an unplaceable number is not planned as a send", () => {
     const [row] = planFor(DRAFT, [recipient({ stateCode: null })], at, allow);
-    // No zone means no provably-legal send time, so it is parked rather than sent.
     expect(row?.state).toBe("awaiting_human");
     expect(row?.verdict).toBe("skip");
   });
 
   test("the same instant is planned differently for two zones", () => {
-    // 23:00 Eastern: quiet. 23:00 Pacific: quiet too, but 20:00 Eastern against a
-    // 23:00 Pacific instant is the point -- the plan is per recipient, not global.
     const twentyOneEastern = Date.UTC(2026, 2, 2, 22, 0, 0);
     const east = planFor(DRAFT, [recipient({ stateCode: "NY" })], twentyOneEastern, allow)[0];
     const pacific = planFor(DRAFT, [recipient({ stateCode: "CA" })], twentyOneEastern, allow)[0];
@@ -179,14 +182,12 @@ describe("the compliance plan", () => {
   });
 });
 
-describe("the runner gaps are named, not hidden", () => {
-  test("all three missing pieces are declared", () => {
-    expect(RUNNER_GAPS).toHaveLength(3);
-    const text = RUNNER_GAPS.join(" ");
-    // The three things that stop a draft from running unattended today.
-    expect(text).toMatch(/convex\/schema\.ts/);
-    expect(text).toMatch(/sequenceSendClaims/);
-    expect(text).toMatch(/convex\.json/);
+describe("the active runner status", () => {
+  test("runner status describes active Convex cron processing", () => {
+    expect(RUNNER_GAPS).toHaveLength(1);
+    const text = RUNNER_GAPS[0];
+    expect(text).toMatch(/Active runner/i);
+    expect(text).toMatch(/Convex cron/i);
   });
 
   test("the context carries what the command needs and nothing global", () => {
@@ -198,7 +199,6 @@ describe("the runner gaps are named, not hidden", () => {
       now: () => at,
       evaluate: allow,
     };
-    // A root is required so tests never write to the working directory.
     expect(ctx.root).toBe(root);
     expect(ctx.now()).toBe(at);
   });

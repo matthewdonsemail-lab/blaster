@@ -32,17 +32,26 @@ export const createPool = mutation({
   handler: async (ctx, args) => {
     const name = args.name.trim();
     if (!name) throw new Error("a pool needs a name");
-    return ctx.db.insert("pools", {
+    const poolId = await ctx.db.insert("pools", {
       name,
       status: "active",
       strategy: "sequential",
       cursor: -1,
       minSpacingMs: nonNegative(args.minSpacingMs, DEFAULT_MIN_SPACING_MS),
       dailyCapPerNumber: nonNegative(args.dailyCapPerNumber, DEFAULT_DAILY_CAP_PER_NUMBER),
-      activeNumberCount: 0,
+      activeNumberCount: args.phoneNumbers ? args.phoneNumbers.length : 0,
       nextAvailableAt: 0,
       createdAt: Date.now(),
     });
+
+    if (args.phoneNumbers && args.phoneNumbers.length > 0) {
+      for (const [order, phoneNumber] of args.phoneNumbers.entries()) {
+        const phoneNumberId = await ensurePhoneNumber(ctx, phoneNumber);
+        await assignNumberModel(ctx, poolId, phoneNumberId, phoneNumber, order, Date.now());
+      }
+    }
+
+    return poolId;
   },
 });
 

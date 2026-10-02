@@ -60,23 +60,29 @@ import { readBreakdownFrom, twentyReader } from "./lib/pipeline/breakdown/index.
 import { applyOutboundStatus, conversationMessages, listConversations, recordInboundMessage } from "./lib/convex/index.ts";
 import {
   addPoolNumber,
+  commitSequenceDraft,
   createPool,
   createSequence,
-  getPhoneCompliance,
+  deleteSequence,
+  discardSequenceDraft,
   enrollRecipients,
+  getPhoneCompliance,
   getPool,
+  getSequenceById,
+  getSequenceDraft,
   listLedgerNumbers,
   listPools,
+  listSequenceDrafts,
   listSequences,
-  getSequenceById,
   listSuppressions,
   removePoolNumber,
   reorderPoolNumbers,
+  saveSequenceDraft,
   setSequencePool,
   setSequenceStatus,
   setSuppression,
 } from "./lib/convex/index.ts";
-import { requireOperator, resolveOperatorActor } from "./lib/auth/operator/index.ts";
+import { operatorIdentity, requireOperator, resolveOperatorActor } from "./lib/auth/operator/index.ts";
 import { broadcastReply, classifyMessageRules } from "@blaster/core";
 import {
   eventTypeOf,
@@ -582,14 +588,19 @@ pools.post("/pools", requireOperator, async (c) => {
     name?: unknown;
     minSpacingMs?: unknown;
     dailyCapPerNumber?: unknown;
+    phoneNumbers?: unknown;
   } | null;
   if (!body || typeof body.name !== "string" || body.name.trim() === "") {
     return c.json({ error: "name is required" }, 400);
   }
+  const phoneNumbers = Array.isArray(body.phoneNumbers)
+    ? (body.phoneNumbers.filter((n) => typeof n === "string" && n.trim() !== "") as string[])
+    : undefined;
   const result = await createPool({
     name: body.name,
     ...(typeof body.minSpacingMs === "number" ? { minSpacingMs: body.minSpacingMs } : {}),
     ...(typeof body.dailyCapPerNumber === "number" ? { dailyCapPerNumber: body.dailyCapPerNumber } : {}),
+    ...(phoneNumbers && phoneNumbers.length > 0 ? { phoneNumbers } : {}),
   });
   if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
   if (result.status === "failed") return c.json({ error: "Failed to create the pool", detail: result.error }, 502);
@@ -744,6 +755,69 @@ pools.get("/phones/:number/compliance", requireOperator, async (c) => {
   if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
   if (result.status === "failed") return c.json({ error: "Failed to read phone compliance", detail: result.error }, 502);
   if (result.value === null) return c.json({ error: "Unknown phone number" }, 404);
+  return c.json(result.value);
+});
+
+pools.delete("/sequences/:id", requireOperator, async (c) => {
+  const result = await deleteSequence(c.req.param("id"));
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to delete sequence", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+/**
+ * Resumable sequence drafts stored directly in Convex.
+ */
+pools.get("/sequence-drafts", requireOperator, async (c) => {
+  const ownerMemberId = operatorIdentity(c).workspaceMemberId ?? undefined;
+  const result = await listSequenceDrafts({ ownerMemberId });
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to list sequence drafts", detail: result.error }, 502);
+  return c.json({ count: result.value.length, drafts: result.value });
+});
+
+pools.post("/sequence-drafts", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body.name !== "string" || body.name.trim() === "") {
+    return c.json({ error: "name is required" }, 400);
+  }
+  const ownerMemberId = operatorIdentity(c).workspaceMemberId ?? undefined;
+  const result = await saveSequenceDraft({
+    draftId: typeof body.draftId === "string" ? body.draftId : undefined,
+    name: body.name,
+    fromNumber: typeof body.fromNumber === "string" ? body.fromNumber : undefined,
+    poolId: typeof body.poolId === "string" ? body.poolId : undefined,
+    campaignId: typeof body.campaignId === "string" ? body.campaignId : undefined,
+    numberProfileId: typeof body.numberProfileId === "string" ? body.numberProfileId : undefined,
+    currentStep: typeof body.currentStep === "string" ? body.currentStep : undefined,
+    steps: Array.isArray(body.steps) ? (body.steps as any) : undefined,
+    options: typeof body.options === "object" && body.options !== null ? (body.options as any) : undefined,
+    ownerMemberId,
+  });
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to save sequence draft", detail: result.error }, 502);
+  return c.json(result.value, 201);
+});
+
+pools.get("/sequence-drafts/:id", requireOperator, async (c) => {
+  const result = await getSequenceDraft(c.req.param("id"));
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to read sequence draft", detail: result.error }, 502);
+  if (result.value === null) return c.json({ error: "Unknown sequence draft" }, 404);
+  return c.json(result.value);
+});
+
+pools.delete("/sequence-drafts/:id", requireOperator, async (c) => {
+  const result = await discardSequenceDraft(c.req.param("id"));
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to discard sequence draft", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+pools.post("/sequence-drafts/:id/commit", requireOperator, async (c) => {
+  const result = await commitSequenceDraft(c.req.param("id"));
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to commit sequence draft", detail: result.error }, 502);
   return c.json(result.value);
 });
 

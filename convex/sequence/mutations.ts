@@ -354,3 +354,96 @@ export const claimSendCapacity = internalMutation({
   },
 });
 
+/**
+ * Update an existing sequence: its name, options, and steps.
+ */
+export const updateSequence = mutation({
+  args: {
+    sequenceId: v.id("sequences"),
+    name: v.optional(v.string()),
+    fromNumber: v.optional(v.string()),
+    poolId: v.optional(v.id("pools")),
+    campaignId: v.optional(v.string()),
+    numberProfileId: v.optional(v.string()),
+    options: v.optional(
+      v.object({
+        stopOnReply: v.optional(v.boolean()),
+        respectDoNotContact: v.optional(v.boolean()),
+        requireProfileForCountry: v.optional(v.boolean()),
+        dailyCapPerRecipient: v.optional(v.number()),
+        pinSender: v.optional(v.boolean()),
+      }),
+    ),
+    steps: v.optional(
+      v.array(
+        v.object({
+          text: v.string(),
+          delayHours: v.number(),
+          isStop: v.boolean(),
+        }),
+      ),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const sequence = await ctx.db.get("sequences", args.sequenceId);
+    if (!sequence) throw new Error(`unknown sequence ${args.sequenceId}`);
+
+    const patch: Record<string, unknown> = {};
+    if (args.name !== undefined) patch.name = args.name.trim();
+    if (args.fromNumber !== undefined) patch.fromNumber = args.fromNumber;
+    if (args.poolId !== undefined) patch.poolId = args.poolId;
+    if (args.campaignId !== undefined) patch.campaignId = args.campaignId;
+    if (args.numberProfileId !== undefined) patch.numberProfileId = args.numberProfileId;
+    if (args.options !== undefined) {
+      patch.options = { ...sequence.options, ...args.options };
+    }
+
+    if (args.steps !== undefined) {
+      // Delete old steps
+      // eslint-disable-next-line @convex-dev/no-collect-in-query
+      const oldSteps = await ctx.db
+        .query("sequenceSteps")
+        .withIndex("sequenceId", (q) => q.eq("sequenceId", args.sequenceId))
+        .collect();
+      for (const step of oldSteps) {
+        await ctx.db.delete("sequenceSteps", step._id);
+      }
+      // Insert new steps
+      for (const [order, step] of args.steps.entries()) {
+        await ctx.db.insert("sequenceSteps", { sequenceId: args.sequenceId, order, ...step });
+      }
+      patch.stepCount = args.steps.length;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch("sequences", args.sequenceId, patch);
+    }
+    return args.sequenceId;
+  },
+});
+
+/**
+ * Delete a sequence and all its steps.
+ */
+export const deleteSequence = mutation({
+  args: {
+    sequenceId: v.id("sequences"),
+  },
+  handler: async (ctx, args) => {
+    const sequence = await ctx.db.get("sequences", args.sequenceId);
+    if (!sequence) throw new Error(`unknown sequence ${args.sequenceId}`);
+
+    // eslint-disable-next-line @convex-dev/no-collect-in-query
+    const steps = await ctx.db
+      .query("sequenceSteps")
+      .withIndex("sequenceId", (q) => q.eq("sequenceId", args.sequenceId))
+      .collect();
+    for (const step of steps) {
+      await ctx.db.delete("sequenceSteps", step._id);
+    }
+    await ctx.db.delete("sequences", args.sequenceId);
+    return true;
+  },
+});
+
+

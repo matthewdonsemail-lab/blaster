@@ -268,12 +268,14 @@ export async function createPool(input: {
   name: string;
   minSpacingMs?: number;
   dailyCapPerNumber?: number;
+  phoneNumbers?: string[];
 }): Promise<PoolResult<{ id: string }>> {
   return poolCall(async () => {
     const id = await convexClient()!.mutation(api.pool.mutations.createPool, {
       name: input.name,
       ...(input.minSpacingMs === undefined ? {} : { minSpacingMs: input.minSpacingMs }),
       ...(input.dailyCapPerNumber === undefined ? {} : { dailyCapPerNumber: input.dailyCapPerNumber }),
+      ...(input.phoneNumbers ? { phoneNumbers: input.phoneNumbers } : {}),
     });
     return { id };
   });
@@ -412,6 +414,90 @@ export async function getPhoneCompliance(
     return await convexClient()!.query(api.phoneNumbers.queries.getCompliance, {
       phoneNumber,
     });
+  });
+}
+
+export async function deleteSequence(
+  sequenceId: string,
+): Promise<PoolResult<{ deleted: boolean }>> {
+  return poolCall(async () => {
+    const deleted = await convexClient()!.mutation(api.sequence.mutations.deleteSequence, {
+      sequenceId: sequenceId as Id<"sequences">,
+    });
+    return { deleted: Boolean(deleted) };
+  });
+}
+
+export async function listSequenceDrafts(options?: {
+  ownerMemberId?: string;
+  limit?: number;
+}): Promise<PoolResult<any[]>> {
+  return poolCall(async () => {
+    return await convexClient()!.query(api.sequence.drafts.listSequenceDrafts, {
+      ...(options?.ownerMemberId ? { ownerMemberId: options.ownerMemberId } : {}),
+      ...(options?.limit ? { limit: options.limit } : {}),
+    });
+  });
+}
+
+export async function getSequenceDraft(
+  draftId: string,
+): Promise<PoolResult<any | null>> {
+  return poolCall(async () => {
+    return await convexClient()!.query(api.sequence.drafts.getSequenceDraft, {
+      draftId: draftId as Id<"sequenceDrafts">,
+    });
+  });
+}
+
+export async function saveSequenceDraft(input: {
+  draftId?: string;
+  name: string;
+  fromNumber?: string;
+  poolId?: string;
+  campaignId?: string;
+  numberProfileId?: string;
+  currentStep?: string;
+  steps?: Array<{ text: string; delayHours: number; isStop: boolean }>;
+  options?: Record<string, unknown>;
+  ownerMemberId?: string;
+}): Promise<PoolResult<{ draftId: string }>> {
+  return poolCall(async () => {
+    const draftId = await convexClient()!.mutation(api.sequence.drafts.saveSequenceDraft, {
+      ...(input.draftId ? { draftId: input.draftId as Id<"sequenceDrafts"> } : {}),
+      name: input.name,
+      fromNumber: input.fromNumber,
+      ...(input.poolId ? { poolId: input.poolId as Id<"pools"> } : {}),
+      campaignId: input.campaignId,
+      numberProfileId: input.numberProfileId,
+      currentStep: input.currentStep,
+      steps: input.steps,
+      options: input.options as any,
+      ownerMemberId: input.ownerMemberId,
+    });
+    return { draftId };
+  });
+}
+
+export async function discardSequenceDraft(
+  draftId: string,
+): Promise<PoolResult<{ discarded: boolean }>> {
+  return poolCall(async () => {
+    const discarded = await convexClient()!.mutation(api.sequence.drafts.discardSequenceDraft, {
+      draftId: draftId as Id<"sequenceDrafts">,
+    });
+    return { discarded: Boolean(discarded) };
+  });
+}
+
+export async function commitSequenceDraft(
+  draftId: string,
+): Promise<PoolResult<{ sequenceId: string }>> {
+  return poolCall(async () => {
+    const sequenceId = await convexClient()!.mutation(api.sequence.drafts.commitSequenceDraft, {
+      draftId: draftId as Id<"sequenceDrafts">,
+    });
+    return { sequenceId };
   });
 }
 

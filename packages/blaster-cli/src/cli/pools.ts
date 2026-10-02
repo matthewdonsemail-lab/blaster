@@ -204,14 +204,10 @@ async function poolsWizard(
     name,
     ...(spacing === undefined ? {} : { minSpacingMs: Number(spacing) }),
     ...(dailyCap === undefined ? {} : { dailyCapPerNumber: Number(dailyCap) }),
+    phoneNumbers: chosen,
   });
 
-  // Added in the order they were chosen, so the pool's dispatch order matches
-  // the selection. Each add returns the pool as it now stands.
-  let pool: PoolDetail | null = null;
-  for (const phoneNumber of chosen) {
-    pool = await client.addPoolNumber({ poolId: created.id, phoneNumber });
-  }
+  const pool = await client.getPool(created.id);
   note("Pool created", pool ? formatPool(pool) : `Pool ${created.id} with ${chosen.length} number(s).`);
 
   const assign = await askConfirm("Assign this pool to a sequence now?", false);

@@ -56,6 +56,8 @@ export interface SequenceDraft {
   name: string;
   /** Sending number in E.164. */
   fromNumber: string;
+  /** Pool assigned to that sequence, when there is one. */
+  poolId?: string;
   /** Profile bound to that number, when the operator set one. */
   numberProfileId?: string;
   /** Twenty campaign this sequence belongs to, when there is one. */

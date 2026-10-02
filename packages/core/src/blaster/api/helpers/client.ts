@@ -14,10 +14,12 @@ import {
   type ActivateSequenceResult,
   type AddPoolNumberInput,
   type BatchSendResult,
+  type CommitSequenceDraftResult,
   type ConversationMessageRow,
   type ConversationPersonRow,
   type ConversationSummary,
   type CreatePoolInput,
+  type DeleteSequenceResult,
   type EnrollResult,
   type ListConversationsQuery,
   type PhoneComplianceResult,
@@ -30,11 +32,13 @@ import {
   type RegisterSequenceResult,
   type RemovePoolNumberInput,
   type ReorderPoolNumbersInput,
+  type SaveSequenceDraftInput,
   type SendingNumber,
   type SendPreview,
   type SendRequest,
   type SentMessage,
   type SendResolution,
+  type SequenceDraftRecord,
   type SequenceOption,
   type SetSequencePoolInput,
   type SuppressionRow,
@@ -98,12 +102,27 @@ export interface BlasterApiClient {
   setSequencePool(input: SetSequencePoolInput): Promise<{ sequenceId: string }>;
   /** Sequences, for a pool-assignment picker. */
   listSequences(): Promise<SequenceOption[]>;
+  /** One sequence with its steps and options. */
+  getSequence(sequenceId: string): Promise<{ _id: string; name: string; status: string; poolId: string | null } | null>;
   /** Register a sequence with steps and options in one validated call. */
   registerSequence(input: RegisterSequenceInput): Promise<RegisterSequenceResult>;
   /** Activate a sequence. */
   activateSequence(sequenceId: string): Promise<ActivateSequenceResult>;
+  /** Delete a sequence. */
+  deleteSequence(sequenceId: string): Promise<DeleteSequenceResult>;
   /** Check 10DLC compliance and carrier readiness snapshot for a phone number. */
   getPhoneCompliance(phoneNumber: string): Promise<PhoneComplianceResult | null>;
+
+  /** List unfinished sequence drafts from Convex. */
+  listSequenceDrafts(options?: { ownerMemberId?: string; limit?: number }): Promise<SequenceDraftRecord[]>;
+  /** Get a single sequence draft. */
+  getSequenceDraft(draftId: string): Promise<SequenceDraftRecord | null>;
+  /** Save or checkpoint a sequence draft. */
+  saveSequenceDraft(input: SaveSequenceDraftInput): Promise<{ draftId: string }>;
+  /** Discard an unfinished sequence draft. */
+  discardSequenceDraft(draftId: string): Promise<{ discarded: boolean }>;
+  /** Commit a sequence draft into a live sequence in Convex. */
+  commitSequenceDraft(draftId: string): Promise<CommitSequenceDraftResult>;
 
   /** Everyone currently suppressed (a durable per-person do-not-contact). */
   listSuppressions(): Promise<SuppressionRow[]>;
@@ -343,6 +362,13 @@ export function createBlasterApiClient(options: BlasterApiClientOptions): Blaste
       return body.sequences;
     },
 
+    async getSequence(sequenceId) {
+      return get<{ _id: string; name: string; status: string; poolId: string | null } | null>(
+        `/api/sequences/${encodeURIComponent(sequenceId)}`,
+        {},
+      );
+    },
+
     registerSequence(input) {
       return post<RegisterSequenceResult>("/api/sequences", input);
     },
@@ -351,8 +377,35 @@ export function createBlasterApiClient(options: BlasterApiClientOptions): Blaste
       return post<ActivateSequenceResult>(`/api/sequences/${encodeURIComponent(sequenceId)}/activate`, {});
     },
 
+    deleteSequence(sequenceId) {
+      return send<DeleteSequenceResult>("DELETE", `/api/sequences/${encodeURIComponent(sequenceId)}`);
+    },
+
     getPhoneCompliance(phoneNumber) {
       return get<PhoneComplianceResult | null>(`/api/phones/${encodeURIComponent(phoneNumber)}/compliance`, {});
+    },
+
+    async listSequenceDrafts(options) {
+      const body = await get<{ count: number; drafts: SequenceDraftRecord[] }>("/api/sequence-drafts", {
+        limit: options?.limit,
+      });
+      return body.drafts;
+    },
+
+    getSequenceDraft(draftId) {
+      return get<SequenceDraftRecord | null>(`/api/sequence-drafts/${encodeURIComponent(draftId)}`, {});
+    },
+
+    saveSequenceDraft(input) {
+      return post<{ draftId: string }>("/api/sequence-drafts", input);
+    },
+
+    discardSequenceDraft(draftId) {
+      return send<{ discarded: boolean }>("DELETE", `/api/sequence-drafts/${encodeURIComponent(draftId)}`);
+    },
+
+    commitSequenceDraft(draftId) {
+      return post<CommitSequenceDraftResult>(`/api/sequence-drafts/${encodeURIComponent(draftId)}/commit`, {});
     },
 
     async listSuppressions() {

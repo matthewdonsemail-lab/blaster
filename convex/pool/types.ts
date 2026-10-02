@@ -34,6 +34,7 @@ export const createPoolArgsValidator = v.object({
   name: v.string(),
   minSpacingMs: v.optional(v.number()),
   dailyCapPerNumber: v.optional(v.number()),
+  phoneNumbers: v.optional(v.array(v.string())),
 });
 export type CreatePoolArgs = Infer<typeof createPoolArgsValidator>;
 

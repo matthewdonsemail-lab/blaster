@@ -1,8 +1,8 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-02T12:38:28Z
-commit: feat: outbound SMS 10DLC compliance gate, multi-scope rate limiting, and pool sender pinning
+updated: 2026-10-02T13:46:07Z
+commit: feat: transition to Convex-only sequence draft and resume lifecycle with atomic pool creation
 -->
 
 The running scope for the number-pool objective. `scripts/check-goal.mjs` refuses
@@ -21,128 +21,41 @@ the per-number or account ceiling.
 
 ## Files changed
 
-- goal.md
+- .agents/skills/domain-modeling/SKILL.md
+- GLOSSARY.md
 - apps/api/src/index.ts
 - apps/api/src/lib/convex/helpers/client.ts
 - apps/api/src/lib/convex/index.ts
 - convex/_generated/api.d.ts
-- convex/phoneNumbers/actions.ts
-- convex/phoneNumbers/compliance.ts
-- convex/phoneNumbers/model.ts
-- convex/phoneNumbers/mutations.ts
-- convex/phoneNumbers/queries.ts
-- convex/pool/helpers.ts
-- convex/pool/model.ts
-- convex/rateLimit.ts
-- convex/schema/phone.ts
+- convex/http/sequence.ts
+- convex/pool/mutations.ts
+- convex/pool/types.ts
 - convex/schema/sequences.ts
-- convex/sequence/actions.ts
-- convex/sequence/enrollment.ts
-- convex/sequence/helpers.ts
+- convex/sequence/drafts.ts
 - convex/sequence/mutations.ts
-- convex/sequence/types.ts
-- convex/test/harness.ts
-- packages/blaster-cli/src/cli/index.ts
-- packages/blaster-cli/src/cli/sequence.ts
-- packages/blaster-mcp/src/mcp/index.ts
-- packages/core/src/blaster/api/helpers/client.ts
-- packages/core/src/blaster/api/types.ts
-- packages/core/src/pipeline/sequence/compliance.ts
-- packages/core/src/pipeline/sequence/helpers/dry-run.ts
-- packages/core/src/pipeline/sequence/helpers/quiet-hours.ts
-- packages/core/src/pipeline/sequence/index.ts
-- packages/core/src/pipeline/sequence/machine.ts
-- packages/core/src/pipeline/sequence/types.ts
-- packages/core/src/telnyx/messaging/helpers/phone-derived-state.ts
-- packages/core/test/compliance.test.ts
-- packages/core/test/phone-derived-state.test.ts
-- packages/core/test/sequence-machine.test.ts
-- scripts/check-surfaces.mjs
-- convex/rateLimit.ts
-- convex/schema.ts
-- convex/schema/pool.ts
-- convex/schema/sequences.ts
-- convex/sequence/actions.ts
-- convex/sequence/helpers.ts
-- convex/sequence/mutations.ts
-- convex/sequence/types.ts
-- docs/README.md
-- docs/architecture.md
 - docs/convex-naming-conventions.md
-- docs/pools.md
-- docs/sequencer.md
-- docs/agents/domain.md
-- docs/agents/issue-tracker.md
-- docs/agents/triage-labels.md
-- .scratch/reliable-pooled-outbound/map.md
-- .scratch/reliable-pooled-outbound/issues/01-suppression-model.md
-- .scratch/reliable-pooled-outbound/issues/02-thread-identity.md
-- .scratch/reliable-pooled-outbound/issues/03-limiter-pool-relationship.md
-- .scratch/reliable-pooled-outbound/issues/04-convex-test-harness.md
-- .scratch/reliable-pooled-outbound/issues/05-open-the-pr.md
-- AGENTS.md
-- CLAUDE.md
+- docs/naming-conventions.md
+- goal.md
 - lefthook.yml
 - package.json
 - packages/blaster-cli/src/cli/index.ts
 - packages/blaster-cli/src/cli/pools.ts
-- packages/blaster-cli/src/cli/prompt.ts
+- packages/blaster-cli/src/cli/sequence-store.ts
+- packages/blaster-cli/src/cli/sequence.ts
+- packages/blaster-cli/test/sequence-drafts.test.ts
+- packages/blaster-cli/test/sequence-menu.test.ts
 - packages/blaster-mcp/src/mcp/index.ts
 - packages/core/src/blaster/api/helpers/client.ts
 - packages/core/src/blaster/api/types.ts
+- packages/core/src/blaster/capabilities/helpers/index.ts
+- packages/core/src/blaster/capabilities/helpers/registry.ts
+- packages/core/src/blaster/capabilities/index.ts
+- packages/core/src/blaster/capabilities/types.ts
 - packages/core/src/index.ts
-- packages/core/src/pipeline/pool/helpers/index.ts
-- packages/core/src/pipeline/pool/helpers/select.ts
-- packages/core/src/pipeline/pool/index.ts
-- packages/core/src/pipeline/pool/types.ts
-- packages/core/test/pool.test.ts
-- packages/core/test/telnyx-ownership.test.ts
-- scripts/check-goal.mjs
+- packages/core/src/pipeline/sequence/helpers/builder.ts
+- packages/core/test/capabilities.test.ts
+- plugins/blaster/skills/sequences/SKILL.md
 - scripts/check-surfaces.mjs
-- convex.json
-- convex/crons.ts
-- convex/schema/suppressions.ts
-- convex/suppressions/index.ts
-- convex/suppressions/model.ts
-- convex/suppressions/mutations.ts
-- convex/suppressions/types.ts
-- convex/test/README.md
-- convex/test/globals.d.ts
-- convex/test/harness.ts
-- convex/test/modules.ts
-- convex/test/refs.ts
-- convex/test/pool.test.ts
-- convex/test/conversations.test.ts
-- convex/test/suppressions.test.ts
-- packages/blaster-cli/src/cli/suppress.ts
-- convex/sequence/enrollment.ts
-- convex/sequence/queries.ts
-- convex/http/pool.ts
-- convex/http/sequence.ts
-- convex/http/suppressions.ts
-- convex/http/conversations.ts
-- convex/http.ts
-- convex/_generated/api.d.ts
-- convex/_generated/server.d.ts
-- scripts/convex-codegen.mjs
-- scripts/openapi.mjs
-- scripts/check-surfaces.mjs
-- openapi.yaml
-- pnpm-lock.yaml
-- docs/convex-naming-conventions.md
-- docs/sequencer.md
-- docs/pools.md
-- convex/test/conversations.test.ts
-- convex/test/refs.ts
-- packages/core/src/blaster/api/types.ts
-- packages/core/src/blaster/api/helpers/client.ts
-- packages/blaster-cli/src/cli/inbox.ts
-- packages/blaster-cli/src/cli/index.ts
-- packages/blaster-mcp/src/mcp/index.ts
-- apps/api/src/index.ts
-- apps/api/src/lib/convex/helpers/client.ts
-- vitest.config.ts
-- package.json
 
 ## Task
 
@@ -168,9 +81,6 @@ the per-number or account ceiling.
 - [x] Operator routes mirrored on the Convex HTTP router: `convex/http/` registers pools, sequences, suppressions, and conversations routes so a site with no Hono in front still answers them; `check:surfaces` now verifies the mirror and rejects drift in both directions
 - [x] OpenAPI spec at `openapi.yaml` generated from the deployment by the official `convex-helpers open-api-spec` CLI (`pnpm openapi` to refresh); documents the Convex function surface including internal actions
 - [x] Open the PR and get the pool branch merged to `main` (ticket 05) — merged 2026-10-02, `9b70ac3`
-- [ ] README reflects only live, relay-contracted CLI and MCP tools; `check:surfaces` enforces it as a pre-push gate
-- [ ] Authored docs aligned to current state: docs/sequencer.md delivery step, docs/architecture.md gates table, docs/README.md authored index, docs/deployment.md rewritten for Railcode
-- [ ] Dual-host plugin tree: `plugins/blaster/` carries both Claude Code (`.claude-plugin/` + `.mcp.json`) and Codex (root `plugin.json` + `mcp.json` + `.agents/plugins/marketplace.json`) from one source; five skills drawn from the as-built docs; vendor pages committed under `docs/plugins/`
 - [x] 10DLC compliance verification snapshot and send gate: `checkSenderReadiness` (7 gates, snapshot freshness limit), `checkDocReadiness`, hard send gate excluding unverified US long-codes
 - [x] Multi-scope token bucket rate limiting: atomic capacity check across account ceiling, per-number rate bucket, campaign class throughput, and brand daily cap
 - [x] Stable sender identity: per-enrollment sender pinning (`pinnedSenderPhoneNumber`, `pinnedSenderNumberId`) from active pools
@@ -178,4 +88,7 @@ the per-number or account ceiling.
 - [x] Parity across operator surfaces: CLI (`blaster phones compliance`, `blaster sequence activate`), MCP (`blaster_check_phone_compliance`, `blaster_activate_sequence`, `blaster_register_sequence`), and HTTP API (`/api/phones/:number/compliance`, `/api/sequences/:id/activate`, `/api/sequences`)
 - [x] Recipient timezone derivation: synchronous area-code to USPS state mapping via `lookupAreaCodeState` in `timeZoneForNumber` prevents valid US numbers without explicit state codes from parking as unplaceable
 - [x] Telnyx 10DLC provider sync action: `phoneNumbers:refreshComplianceSnapshot` queries live carrier/campaign provisioning and updates the compliance snapshot
-
+- [x] Convex-only sequence draft/resume lifecycle and atomic pool creation: eliminate local sequence storage (.blaster/sequences.json), add resumable sequenceDrafts table in Convex with checkpointing, derive ownership server-side, atomic createPool with phoneNumbers array, and surface parity across CLI, API, MCP, and Convex HTTP router
+- [ ] README reflects only live, relay-contracted CLI and MCP tools; `check:surfaces` enforces it as a pre-push gate
+- [ ] Authored docs aligned to current state: docs/sequencer.md delivery step, docs/architecture.md gates table, docs/README.md authored index, docs/deployment.md rewritten for Railcode
+- [ ] Dual-host plugin tree: `plugins/blaster/` carries both Claude Code (`.claude-plugin/` + `.mcp.json`) and Codex (root `plugin.json` + `mcp.json` + `.agents/plugins/marketplace.json`) from one source; five skills drawn from the as-built docs; vendor pages committed under `docs/plugins/`

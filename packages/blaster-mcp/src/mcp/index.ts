@@ -296,6 +296,10 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         name: { type: "string", description: "A human name for the pool." },
         minSpacingMs: { type: "number", description: "Minimum gap between sends from one number, in milliseconds." },
         dailyCapPerNumber: { type: "number", description: "Messages per number per day. 0 disables the cap." },
+        phoneNumbers: {
+          type: "array",
+          description: "Optional list of E.164 phone numbers to assign to the pool atomically upon creation.",
+        },
       },
       required: ["name"],
       additionalProperties: false,
@@ -446,6 +450,86 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         phoneNumber: { type: "string", description: "E.164 phone number to inspect." },
       },
       required: ["phoneNumber"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_delete_sequence",
+    description: "Delete an outreach sequence and its steps from Convex.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sequenceId: { type: "string", description: "The Convex sequence id to delete." },
+      },
+      required: ["sequenceId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_list_sequence_drafts",
+    description: "List unfinished resumable sequence drafts from Convex.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "Maximum number of drafts to return." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_get_sequence_draft",
+    description: "Get details of an unfinished resumable sequence draft from Convex.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        draftId: { type: "string", description: "The sequence draft id." },
+      },
+      required: ["draftId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_save_sequence_draft",
+    description:
+      "Save or checkpoint a resumable sequence draft to Convex. Supports partial progress checkpointing across wizard prompts.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        draftId: { type: "string", description: "Optional existing draft id to update." },
+        name: { type: "string", description: "The name of the sequence draft." },
+        fromNumber: { type: "string", description: "Sending number in E.164." },
+        poolId: { type: "string", description: "Number pool id." },
+        campaignId: { type: "string", description: "Campaign id." },
+        numberProfileId: { type: "string", description: "Messaging profile id." },
+        currentStep: { type: "string", description: "The step reached in the wizard (e.g. name, sender, steps, options)." },
+        steps: { type: "array", description: "Array of sequence steps." },
+        options: { type: "object", description: "Sequence options." },
+      },
+      required: ["name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_discard_sequence_draft",
+    description: "Discard and delete an unfinished sequence draft from Convex.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        draftId: { type: "string", description: "The sequence draft id to discard." },
+      },
+      required: ["draftId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_commit_sequence_draft",
+    description: "Validate and commit a completed sequence draft into a live sequence in Convex.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        draftId: { type: "string", description: "The sequence draft id to commit." },
+      },
+      required: ["draftId"],
       additionalProperties: false,
     },
   },
@@ -872,11 +956,15 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
     case "blaster_create_pool": {
       const name = typeof args.name === "string" ? args.name : "";
       if (!name) return { text: "name is required." };
+      const phoneNumbers = Array.isArray(args.phoneNumbers)
+        ? (args.phoneNumbers.filter((n) => typeof n === "string" && n.trim() !== "") as string[])
+        : undefined;
       try {
         const created = await blasterApi().createPool({
           name,
           ...(typeof args.minSpacingMs === "number" ? { minSpacingMs: args.minSpacingMs } : {}),
           ...(typeof args.dailyCapPerNumber === "number" ? { dailyCapPerNumber: args.dailyCapPerNumber } : {}),
+          ...(phoneNumbers && phoneNumbers.length > 0 ? { phoneNumbers } : {}),
         });
         return { text: `Created pool ${created.id}.`, structured: created };
       } catch (error) {
@@ -1043,6 +1131,101 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
         if (!result) return { text: `Phone number ${phoneNumber} not found in phone numbers ledger.` };
         return {
           text: `Phone ${result.phoneNumber}: readiness=${result.readiness.ready ? "ready" : "blocked"} (${result.readiness.reason ?? "OK"}), brand=${result.brandStatus ?? "none"}, campaign=${result.campaignStatus ?? "none"}, assignment=${result.assignmentStatus ?? "none"}.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_delete_sequence": {
+      const sequenceId = typeof args.sequenceId === "string" ? args.sequenceId : "";
+      if (!sequenceId) return { text: "sequenceId is required." };
+      try {
+        const result = await blasterApi().deleteSequence(sequenceId);
+        return {
+          text: result.deleted ? `Deleted sequence ${sequenceId}.` : `Sequence ${sequenceId} could not be deleted.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_list_sequence_drafts": {
+      try {
+        const drafts = await blasterApi().listSequenceDrafts({
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+        });
+        return {
+          text: drafts.length === 0 ? "No unfinished sequence drafts." : `${drafts.length} sequence draft(s) found.`,
+          structured: { count: drafts.length, drafts },
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_get_sequence_draft": {
+      const draftId = typeof args.draftId === "string" ? args.draftId : "";
+      if (!draftId) return { text: "draftId is required." };
+      try {
+        const draft = await blasterApi().getSequenceDraft(draftId);
+        if (!draft) return { text: `Sequence draft ${draftId} not found.` };
+        return {
+          text: `Draft "${draft.name}" (${draft._id}) at step "${draft.currentStep ?? "initial"}".`,
+          structured: draft,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_save_sequence_draft": {
+      const name = typeof args.name === "string" ? args.name.trim() : "";
+      if (!name) return { text: "name is required." };
+      try {
+        const result = await blasterApi().saveSequenceDraft({
+          draftId: typeof args.draftId === "string" ? args.draftId : undefined,
+          name,
+          fromNumber: typeof args.fromNumber === "string" ? args.fromNumber : undefined,
+          poolId: typeof args.poolId === "string" ? args.poolId : undefined,
+          campaignId: typeof args.campaignId === "string" ? args.campaignId : undefined,
+          numberProfileId: typeof args.numberProfileId === "string" ? args.numberProfileId : undefined,
+          currentStep: typeof args.currentStep === "string" ? args.currentStep : undefined,
+          steps: Array.isArray(args.steps) ? (args.steps as never) : undefined,
+          options: typeof args.options === "object" && args.options !== null ? (args.options as never) : undefined,
+        });
+        return {
+          text: `Saved sequence draft "${name}" (${result.draftId}).`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_discard_sequence_draft": {
+      const draftId = typeof args.draftId === "string" ? args.draftId : "";
+      if (!draftId) return { text: "draftId is required." };
+      try {
+        const result = await blasterApi().discardSequenceDraft(draftId);
+        return {
+          text: result.discarded ? `Discarded sequence draft ${draftId}.` : `Draft ${draftId} not found.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_commit_sequence_draft": {
+      const draftId = typeof args.draftId === "string" ? args.draftId : "";
+      if (!draftId) return { text: "draftId is required." };
+      try {
+        const result = await blasterApi().commitSequenceDraft(draftId);
+        return {
+          text: `Committed sequence draft ${draftId} into sequence ${result.sequenceId}.`,
           structured: result,
         };
       } catch (error) {

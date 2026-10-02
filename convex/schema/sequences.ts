@@ -49,6 +49,43 @@ export const sequenceTables = {
     // with every sequence ever created rather than with the page it returned.
     .index("createdAt", ["createdAt"]),
 
+  /**
+   * Resumable sequence builder drafts.
+   *
+   * Checkpoints partial progress during interactive creation so an operator
+   * can resume after dropping connection, quitting, or moving machines.
+   */
+  sequenceDrafts: defineTable({
+    name: v.string(),
+    fromNumber: v.optional(v.string()),
+    poolId: v.optional(v.id("pools")),
+    campaignId: v.optional(v.string()),
+    numberProfileId: v.optional(v.string()),
+    currentStep: v.optional(v.string()),
+    steps: v.array(
+      v.object({
+        text: v.string(),
+        delayHours: v.number(),
+        isStop: v.boolean(),
+      }),
+    ),
+    options: v.optional(
+      v.object({
+        stopOnReply: v.optional(v.boolean()),
+        respectDoNotContact: v.optional(v.boolean()),
+        requireProfileForCountry: v.optional(v.boolean()),
+        dailyCapPerRecipient: v.optional(v.number()),
+        pinSender: v.optional(v.boolean()),
+      }),
+    ),
+    ownerMemberId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("ownerMemberId", ["ownerMemberId"])
+    .index("updatedAt", ["updatedAt"])
+    .index("name", ["name"]),
+
   /** One step of a sequence, ordered by `order`. */
   sequenceSteps: defineTable({
     sequenceId: v.id("sequences"),

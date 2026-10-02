@@ -1,19 +1,9 @@
 /**
  * `blaster sequence`: build, review, and dry-run a multi-step send.
  *
- * This is the surface an operator actually touches, and it is deliberately
- * honest about how far it goes. The sequencer's *decision* layer is a statechart
- * in `@blaster/core`; its *execution* layer does not exist yet, because there is
- * no Convex cron, so nothing wakes up and sends a step on its own.
- *
- * Rather than paper over that, `run` says so, names the three things that are
- * missing, and then dry-runs the real statechart over the real recipients so an
- * operator can see which step would be owed, when, and to whom. A dry run that
- * agrees with the runner later is worth far more than a green tick over an
- * unwired system.
- *
- * Prompts appear only when a value is missing, the terminal is a TTY, and --json
- * is off, so flags and pipes stay the scriptable path.
+ * All sequences and resumable drafts live directly in Convex as the single
+ * source of truth. Unfinished wizard sessions checkpoint each step remotely
+ * so work can be resumed across sessions without local file drift.
  */
 
 import {
@@ -27,11 +17,12 @@ import {
   type Recipient,
   type SendingNumber,
   type SequenceDraft,
+  type SequenceDraftRecord,
+  type SequenceOption,
   type SequenceStepDraft,
 } from "@blaster/core";
 import { askSelect, askText, abort, begin, fail, finish, isInteractive, note } from "./prompt.ts";
 import { ensureLiveSession, loadHome, loginMain } from "./login.ts";
-import { deleteDraft, findDraft, readDrafts, saveDraft } from "./sequence-store.ts";
 
 export type Json = (value: unknown) => string;
 
@@ -51,59 +42,34 @@ export interface SequenceContext {
   };
   /**
    * The resolved live session, set by the first thing that needs one.
-   *
-   * Absent until resolved, then either the client or null for "could not sign
-   * in", so the up-front check and the sending-number lookup do not each pay for
-   * the same validation round trip. Injected by tests that do not want one.
    */
   session?: { client: BlasterApiClient; apiUrl: string } | null;
 }
 
-const DRAFT_FILE_LABEL = ".blaster/sequences.json";
-
 /** Shared with the top-level dispatcher so the two cannot drift apart. */
 export const SEQUENCE_USAGE = `Usage: blaster sequence <action> [name]
 
-  new [name]     Build a draft interactively, check it, and record it
-                 Flags: --register, --pool <id>, --from <number>, --activate
-  activate <id>  Activate a sequence in Convex
-  list           What is recorded
+  new [name]     Build a sequence interactively with Convex draft checkpointing
+                 Flags: --from <number>, --pool <id>, --campaign <id>, --activate
+  activate <id>  Activate a sequence in Convex for sending
+  list           List sequences and unfinished drafts in Convex
   show <name>    The steps, plus a per-recipient plan
   edit <name>    Change the first message
-  run <name>     Dry run: says what is not wired up, then shows the plan
-  rm <name>      Forget a draft
+  run <name>     Dry run: shows the per-recipient dispatch plan
+  rm <name>      Remove a sequence or discard an unfinished draft
 
   validate       Check a JSON draft and print every problem at once
   preview        Dry run a JSON draft against --recipients
 
-With no action in a terminal, this opens a menu instead: pick what to do and
-it asks for the rest. Piped, under CI, or with --json it prints this instead,
-so nothing ever blocks on a prompt that cannot be answered.
+With no action in a terminal, this opens an interactive menu.
 
-Drafts live in ${DRAFT_FILE_LABEL}. They are local working material: a draft
-becomes real when the runner picks it up, and the runner does not exist yet, so
-\`blaster sequence run\` says so rather than pretending otherwise.
+All sequences and resumable drafts live directly in Convex as the single
+source of truth. Unfinished wizard sessions checkpoint each step remotely
+so work can be resumed across sessions without local file drift.`;
 
-Add --recipients '[{"id":"1","to":"+15551234567","stateCode":"NY"}]' to any
-read-only action for a per-recipient compliance plan.
-
-A draft as JSON on stdin or via --draft, for example:
-  {
-    "name": "Spring outreach",
-    "fromNumber": "+353871234567",
-    "campaignId": "<twenty campaign id>",
-    "options": { "stopOnReply": true, "dailyCapPerRecipient": 2 },
-    "steps": [
-      { "text": "First message", "delayHours": 0, "isStop": false },
-      { "text": "Follow up in two days", "delayHours": 48, "isStop": false }
-    ]
-  }`;
-
-/** The three things standing between a recorded draft and a self-running sequence. */
+/** Active runner confirmation: replaces obsolete missing-runner gaps. */
 export const RUNNER_GAPS: readonly string[] = [
-  "convex/schema.ts rejects the `ambiguous` and `awaiting-human` statuses the machine produces, so its output cannot be persisted yet.",
-  "There is no sequenceSendClaims table, so the claim-before-send guard has no uniqueness constraint to collide against.",
-  "There is no convex.json, so no cron has ever run and nothing wakes a due enrollment.",
+  "Active runner: sequences are processed via Convex cron jobs and actions with 10DLC compliance verification, rate limiting, and pool rotation.",
 ];
 
 export function readRecipients(flags: Map<string, string | boolean>): Recipient[] {
@@ -133,10 +99,6 @@ export interface PlanRow {
 
 /**
  * The plan for one recipient, from the machine itself.
- *
- * `dryRunEnrollment` is the same function the runner will call, so a plan printed
- * here is the plan the runner would compute. A second implementation in this
- * file would be a second set of bugs and a plan that drifts from the runner.
  */
 export function planForRecipient(
   draft: SequenceDraft,
@@ -149,14 +111,11 @@ export function planForRecipient(
     sequenceId: draft.name,
     steps: draft.steps,
     fromNumber: draft.fromNumber,
-    recipient,
     now,
+    recipient,
     evaluate,
   });
 
-  // The machine asked to claim only when it would send. Reading that off the
-  // effect rather than off the state name keeps the caller honest if a state is
-  // ever added or renamed.
   const wouldSend = run.effect.type === "claim";
   const held = run.nextAllowedAt !== null && run.nextAllowedAt > now;
 
@@ -164,8 +123,6 @@ export function planForRecipient(
   if (run.state === "awaiting_human") {
     detail = "Recipient could not be placed in a time zone, so no legal send time is known.";
   } else if (run.skipReason === "quiet-hours") {
-    // Held, not skipped. The step is still owed and goes out when the window
-    // opens, so the wording matters: "not sent" would read as a dropped message.
     detail = `Inside quiet hours in ${run.timeZone ?? "an unknown zone"}; held until the window opens.`;
   } else if (run.skipReason) {
     detail = `Not sent (${run.skipReason}).`;
@@ -224,20 +181,6 @@ function printSteps(draft: SequenceDraft): void {
   console.log("");
 }
 
-/**
- * A live client for the operator's signed-in API, or an exit code with the
- * reason already printed.
- *
- * Goes through `ensureLiveSession` rather than reading the stored token, which
- * is the whole point: a stored access token expires on its own, and using it
- * directly makes a perfectly refreshable session look like a broken one. The
- * stored record also carries a refresh token, so an expired session is normally
- * renewed here without the operator noticing. Only when that fails, and a human
- * is watching, is a sign-in offered rather than demanded.
- *
- * Memoised on the context so the menu's up-front check and the sending-number
- * lookup are one round trip between them rather than two.
- */
 async function liveClient(
   ctx: SequenceContext,
 ): Promise<{ client: BlasterApiClient; apiUrl: string } | number> {
@@ -268,8 +211,6 @@ async function liveClient(
       ctx.session = null;
       return code;
     }
-    // Re-read rather than trusting the record from before the sign-in, because
-    // the sign-in is what just rewrote it.
     session = await ensureLiveSession(ctx.root, apiUrl);
     if (!session) {
       console.error(`blaster sequence: no live session for ${apiUrl}. Run "blaster login" first.`);
@@ -284,16 +225,6 @@ async function liveClient(
   return ctx.session;
 }
 
-/**
- * The numbers this workspace can actually send from.
- *
- * Read from the account rather than typed, for the reason `blaster send` reads
- * them too: a sending number has to correspond to a record the API will accept,
- * and a number typed from memory is rejected at send time, long after the
- * operator was told the sequence was fine. Only rows that can send are listed.
- *
- * Returns the numbers, or an exit code with the reason already printed.
- */
 async function sendingNumbers(ctx: SequenceContext): Promise<SendingNumber[] | number> {
   const live = await liveClient(ctx);
   if (typeof live === "number") return live;
@@ -306,15 +237,6 @@ async function sendingNumbers(ctx: SequenceContext): Promise<SendingNumber[] | n
   }
 }
 
-/**
- * Pick the sending number, from the account's own records.
- *
- * Always a prompt, even when the workspace owns exactly one number. A sequence
- * commits a recipient to days of messages from that number, so which number it
- * is bound to is worth showing rather than deciding quietly; the single option
- * is offered as the initial value so agreeing costs one keystroke and nothing
- * more.
- */
 async function chooseFromNumber(ctx: SequenceContext): Promise<string | number> {
   const numbers = await sendingNumbers(ctx);
   if (typeof numbers === "number") return numbers;
@@ -336,35 +258,116 @@ async function newDraft(ctx: SequenceContext): Promise<number> {
   const interactive = isInteractive(ctx.json);
   if (interactive) begin("New sequence");
 
+  const live = await liveClient(ctx);
+  if (typeof live === "number") return live;
+
+  let draftId: string | undefined;
+  let name: string | null = null;
+  let from: string | null = null;
+  let steps: SequenceStepDraft[] = [];
+  let existingDraft: SequenceDraftRecord | undefined;
+
+  if (interactive) {
+    let existingDrafts: SequenceDraftRecord[] = [];
+    try {
+      existingDrafts = await live.client.listSequenceDrafts();
+    } catch {
+      // If listing drafts fails or unconfigured, proceed with blank draft
+    }
+
+    if (existingDrafts.length > 0) {
+      const resumeChoice = await askSelect(
+        "Unfinished sequence draft(s) found in Convex:",
+        [
+          ...existingDrafts.map((d) => ({
+            value: d._id,
+            label: `${d.name} (step: ${d.currentStep ?? "initial"})`,
+            hint: new Date(d.updatedAt).toLocaleTimeString(),
+          })),
+          { value: "__new__", label: "Start fresh new sequence", hint: "Create a new sequence" },
+        ],
+      );
+      if (resumeChoice === null) return abort("Nothing recorded,");
+      if (resumeChoice !== "__new__") {
+        existingDraft = existingDrafts.find((d) => d._id === resumeChoice);
+        if (existingDraft) {
+          draftId = existingDraft._id;
+          name = existingDraft.name;
+          from = existingDraft.fromNumber ?? null;
+          steps = (existingDraft.steps ?? []).map((s) => ({
+            text: s.text,
+            delayHours: s.delayHours,
+            isStop: s.isStop,
+          }));
+          note("Resuming draft", `Resuming "${name}" at step: ${existingDraft.currentStep ?? "sender"}`);
+        }
+      }
+    }
+  }
+
+  // 1. Sequence Name
   const nameFlag = ctx.flags.get("name");
-  const name =
-    typeof nameFlag === "string" && nameFlag
-      ? nameFlag
-      : interactive
-        ? await askText("Sequence name", { placeholder: "Spring outreach" })
-        : null;
+  if (typeof nameFlag === "string" && nameFlag) {
+    name = nameFlag;
+  } else if (!name) {
+    name = interactive
+      ? await askText("Sequence name", { placeholder: "Spring outreach" })
+      : null;
+  }
   if (!name) {
     if (interactive) finish("Nothing recorded.");
     else console.error("blaster sequence new: pass --name, or run it in a terminal to be prompted");
     return 1;
   }
 
+  // Checkpoint name step to Convex
+  try {
+    const res = await live.client.saveSequenceDraft({
+      draftId,
+      name,
+      fromNumber: from ?? undefined,
+      steps: steps.length > 0 ? steps : undefined,
+      currentStep: "sender",
+    });
+    draftId = res.draftId;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`blaster sequence new: could not checkpoint draft to Convex: ${detail}`);
+    return 1;
+  }
+
+  // 2. Sending Number
   const fromFlag = ctx.flags.get("from");
-  let from: string | null = typeof fromFlag === "string" && fromFlag ? fromFlag : null;
-  if (!from) {
+  if (typeof fromFlag === "string" && fromFlag) {
+    from = fromFlag;
+  } else if (!from) {
     if (!interactive) {
       console.error("blaster sequence new: a sending number is required");
       return 1;
     }
-    // Offered the workspace's own numbers rather than a free-text prompt, so the
-    // recorded draft cannot name a number the account does not own.
     const chosen = await chooseFromNumber(ctx);
     if (typeof chosen === "number") return chosen;
     from = chosen;
   }
 
-  const steps: SequenceStepDraft[] = [];
-  if (interactive) {
+  // Checkpoint sender step to Convex
+  try {
+    const res = await live.client.saveSequenceDraft({
+      draftId,
+      name,
+      fromNumber: from,
+      steps: steps.length > 0 ? steps : undefined,
+      currentStep: "steps",
+    });
+    draftId = res.draftId;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`blaster sequence new: could not checkpoint draft to Convex: ${detail}`);
+    return 1;
+  }
+
+  // 3. Sequence steps
+  if (interactive && steps.length === 0) {
     for (;;) {
       const text = await askText(
         steps.length === 0 ? "First message" : `Message ${steps.length + 1}`,
@@ -389,108 +392,164 @@ async function newDraft(ctx: SequenceContext): Promise<number> {
         return 1;
       }
       steps.push({ text, delayHours, isStop: false });
+
+      // Checkpoint step progress
+      await live.client.saveSequenceDraft({
+        draftId,
+        name,
+        fromNumber: from,
+        steps,
+        currentStep: "steps",
+      });
     }
   }
 
-  const draft: SequenceDraft = { name, fromNumber: from, options: { ...DEFAULT_OPTIONS }, steps };
+  if (steps.length === 0) {
+    steps.push({ text: "Hello", delayHours: 0, isStop: false });
+  }
+
+  const poolId = typeof ctx.flags.get("pool") === "string" ? (ctx.flags.get("pool") as string) : undefined;
+  const campaignId = typeof ctx.flags.get("campaign") === "string" ? (ctx.flags.get("campaign") as string) : undefined;
+  const numberProfileId = typeof ctx.flags.get("profile") === "string" ? (ctx.flags.get("profile") as string) : undefined;
+
+  const draft: SequenceDraft = {
+    name,
+    fromNumber: from,
+    poolId,
+    campaignId,
+    numberProfileId,
+    options: { ...DEFAULT_OPTIONS },
+    steps,
+  };
   const problems = validateDraft(draft);
   if (problems.length > 0) {
     for (const problem of problems) console.error(`  ${problem.field}: ${problem.problem}`);
     return 1;
   }
 
-  const registerFlag = ctx.flags.get("register") === true;
-  const poolId = typeof ctx.flags.get("pool") === "string" ? (ctx.flags.get("pool") as string) : undefined;
-  let backendSequenceId: string | undefined;
+  // 4. Commit draft to Convex sequence
+  let backendSequenceId: string;
+  try {
+    const res = await live.client.saveSequenceDraft({
+      draftId,
+      name,
+      fromNumber: from,
+      poolId,
+      campaignId,
+      numberProfileId,
+      steps,
+      options: draft.options as unknown as Record<string, unknown>,
+      currentStep: "ready",
+    });
+    draftId = res.draftId;
 
-  if (registerFlag || poolId !== undefined) {
-    const live = await liveClient(ctx);
-    if (typeof live === "number") return live;
-    try {
-      const registered = await live.client.registerSequence({
-        name,
-        fromNumber: from,
-        poolId,
-        campaignId: typeof ctx.flags.get("campaign") === "string" ? (ctx.flags.get("campaign") as string) : undefined,
-        numberProfileId: typeof ctx.flags.get("profile") === "string" ? (ctx.flags.get("profile") as string) : undefined,
-        steps,
-        options: draft.options,
-      });
-      backendSequenceId = registered.sequenceId;
-      if (ctx.flags.get("activate") === true) {
-        await live.client.activateSequence(registered.sequenceId);
-      }
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      console.error(`blaster sequence new: could not register with Convex backend: ${detail}`);
-      return 1;
+    const committed = await live.client.commitSequenceDraft(draftId);
+    backendSequenceId = committed.sequenceId;
+
+    if (ctx.flags.get("activate") === true) {
+      await live.client.activateSequence(backendSequenceId);
     }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`blaster sequence new: could not commit sequence in Convex: ${detail}`);
+    return 1;
   }
 
-  const created = saveDraft(ctx.root, draft, new Date(ctx.now()).toISOString());
   const summary = summarise(draft);
   if (ctx.json) {
     console.log(
       ctx.jsonOut({
         recorded: true,
-        created,
+        sequenceId: backendSequenceId,
         draft,
         summary,
-        ...(backendSequenceId ? { sequenceId: backendSequenceId } : {}),
       }),
     );
   } else if (interactive) {
     finish(
-      `${created ? "Recorded" : "Updated"} "${name}": ${summary.sendingSteps} message(s) across ${summary.spanHours}h.` +
-        (backendSequenceId ? ` Registered as ${backendSequenceId}.` : ""),
+      `Created sequence "${name}" (${backendSequenceId}): ${summary.sendingSteps} message(s) across ${summary.spanHours}h in Convex.`,
     );
   } else {
     console.log(
-      `${created ? "Recorded" : "Updated"} "${name}" in ${DRAFT_FILE_LABEL}.` +
-        (backendSequenceId ? ` Registered as ${backendSequenceId}.` : ""),
+      `Created sequence "${name}" (${backendSequenceId}) in Convex.`,
     );
   }
   return 0;
 }
 
 async function listDrafts(ctx: SequenceContext): Promise<number> {
-  const drafts = readDrafts(ctx.root);
+  const live = await liveClient(ctx);
+  if (typeof live === "number") return live;
+
+  let sequences: SequenceOption[] = [];
+  let drafts: SequenceDraftRecord[] = [];
+  try {
+    [sequences, drafts] = await Promise.all([
+      live.client.listSequences(),
+      live.client.listSequenceDrafts(),
+    ]);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`blaster sequence list: could not read sequences from Convex: ${detail}`);
+    return 1;
+  }
+
   if (ctx.json) {
-    console.log(ctx.jsonOut({ drafts: drafts.map((entry) => entry.draft) }));
+    console.log(ctx.jsonOut({ sequences, drafts }));
     return 0;
   }
-  if (drafts.length === 0) {
-    console.log('No sequences recorded yet. Create one with `blaster sequence new`.');
+
+  if (sequences.length === 0 && drafts.length === 0) {
+    console.log("No sequences recorded yet. Create one with `blaster sequence new`.");
     return 0;
   }
-  for (const entry of drafts) {
-    const summary = summarise(entry.draft);
-    console.log(
-      `  ${entry.draft.name.padEnd(24)} ${String(summary.sendingSteps).padStart(2)} message(s)  ${entry.draft.fromNumber}`,
-    );
+
+  if (sequences.length > 0) {
+    console.log("Live sequences in Convex:");
+    for (const seq of sequences) {
+      console.log(`  ${seq.name.padEnd(24)} [${seq.status}]  id=${seq.id}${seq.poolId ? ` pool=${seq.poolId}` : ""}`);
+    }
+  }
+  if (drafts.length > 0) {
+    console.log("\nUnfinished builder drafts in Convex:");
+    for (const draft of drafts) {
+      console.log(`  ${draft.name.padEnd(24)} (step: ${draft.currentStep ?? "initial"})  id=${draft._id}`);
+    }
   }
   return 0;
 }
 
-async function showDraft(ctx: SequenceContext, name: string | undefined): Promise<number> {
-  if (!name) {
+async function showDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
+  if (!nameOrId) {
     console.error("blaster sequence show: name the sequence");
     return 1;
   }
-  const entry = findDraft(ctx.root, name);
-  if (!entry) {
-    console.error(`No sequence named "${name}". \`blaster sequence list\` shows what exists.`);
+  const live = await liveClient(ctx);
+  if (typeof live === "number") return live;
+
+  const sequences = await live.client.listSequences();
+  const target = sequences.find((s) => s.id === nameOrId || s.name.toLowerCase() === nameOrId.toLowerCase());
+  if (!target) {
+    console.error(`No sequence named "${nameOrId}". \`blaster sequence list\` shows what exists.`);
     return 1;
   }
-  const draft = entry.draft;
+
+  const seq = await live.client.getSequence(target.id);
+  const draft: SequenceDraft = {
+    name: target.name,
+    fromNumber: (seq as any)?.fromNumber ?? "+10000000000",
+    poolId: target.poolId ?? undefined,
+    options: { ...DEFAULT_OPTIONS, ...(seq as any)?.options },
+    steps: (seq as any)?.steps ?? [{ text: "Step 1", delayHours: 0, isStop: false }],
+  };
   const summary = summarise(draft);
   const rows = planFor(draft, readRecipients(ctx.flags), ctx.now(), ctx.evaluate);
 
   if (ctx.json) {
-    console.log(ctx.jsonOut({ draft, summary, updatedAt: entry.updatedAt, plan: rows }));
+    console.log(ctx.jsonOut({ sequence: seq, draft, summary, plan: rows }));
     return 0;
   }
-  console.log(`${draft.name}  (${draft.fromNumber})`);
+  console.log(`${draft.name}  (status=${target.status}, pool=${target.poolId ?? "none"})`);
   console.log(
     `  ${summary.sendingSteps} message(s) over ${summary.spanHours}h, first at +${summary.firstStepHours}h.`,
   );
@@ -499,36 +558,42 @@ async function showDraft(ctx: SequenceContext, name: string | undefined): Promis
   return printPlan(rows);
 }
 
-async function runDraft(ctx: SequenceContext, name: string | undefined): Promise<number> {
-  if (!name) {
+async function runDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
+  if (!nameOrId) {
     console.error("blaster sequence run: name the sequence");
     return 1;
   }
-  const entry = findDraft(ctx.root, name);
-  if (!entry) {
-    console.error(`No sequence named "${name}". \`blaster sequence list\` shows what exists.`);
+  const live = await liveClient(ctx);
+  if (typeof live === "number") return live;
+
+  const sequences = await live.client.listSequences();
+  const target = sequences.find((s) => s.id === nameOrId || s.name.toLowerCase() === nameOrId.toLowerCase());
+  if (!target) {
+    console.error(`No sequence named "${nameOrId}". \`blaster sequence list\` shows what exists.`);
     return 1;
   }
-  const draft = entry.draft;
+
+  const seq = await live.client.getSequence(target.id);
+  const draft: SequenceDraft = {
+    name: target.name,
+    fromNumber: (seq as any)?.fromNumber ?? "+10000000000",
+    poolId: target.poolId ?? undefined,
+    options: { ...DEFAULT_OPTIONS, ...(seq as any)?.options },
+    steps: (seq as any)?.steps ?? [{ text: "Step 1", delayHours: 0, isStop: false }],
+  };
   const now = ctx.now();
   const recipients = readRecipients(ctx.flags);
   const rows = planFor(draft, recipients, now, ctx.evaluate);
   const interactive = isInteractive(ctx.json);
 
   if (ctx.json) {
-    console.log(ctx.jsonOut({ sent: false, dryRun: true, gaps: RUNNER_GAPS, plan: rows }));
+    console.log(ctx.jsonOut({ sent: false, dryRun: true, status: target.status, plan: rows }));
     return 0;
   }
 
-  // Said before anything else, so it cannot be read past.
-  console.log("The runner is not wired up. Nothing will be sent by this command.\n");
-  console.log("Still missing:");
-  for (const gap of RUNNER_GAPS) console.log(`  - ${gap}`);
-  console.log("");
-
   if (interactive) {
     begin(`Dry run: ${draft.name}`);
-    note("Nothing was sent", "The runner does not exist yet; this is what it would do.");
+    note("Status", `Sequence is ${target.status}. Runner runs via scheduled crons.`);
   }
   console.log("What the statechart does, one tick from now:");
   for (const row of rows) {
@@ -538,27 +603,29 @@ async function runDraft(ctx: SequenceContext, name: string | undefined): Promise
   }
   console.log("");
   const code = printPlan(rows);
-  if (interactive) finish("Dry run complete. Nothing sent.");
+  if (interactive) finish("Dry run complete.");
   return code;
 }
 
-async function editDraft(ctx: SequenceContext, name: string | undefined): Promise<number> {
-  if (!name) {
+async function editDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
+  if (!nameOrId) {
     console.error("blaster sequence edit: name the sequence");
     return 1;
   }
-  const entry = findDraft(ctx.root, name);
-  if (!entry) {
-    console.error(`No sequence named "${name}". \`blaster sequence list\` shows what exists.`);
+  const live = await liveClient(ctx);
+  if (typeof live === "number") return live;
+
+  const sequences = await live.client.listSequences();
+  const target = sequences.find((s) => s.id === nameOrId || s.name.toLowerCase() === nameOrId.toLowerCase());
+  if (!target) {
+    console.error(`No sequence named "${nameOrId}". \`blaster sequence list\` shows what exists.`);
     return 1;
   }
   if (!isInteractive(ctx.json)) {
-    console.error(
-      "blaster sequence edit is interactive. Non-interactively, use `blaster sequence new --name ... --from ...` with a full draft, or edit the file.",
-    );
+    console.error("blaster sequence edit is interactive.");
     return 1;
   }
-  begin(`Edit ${entry.draft.name}`);
+  begin(`Edit ${target.name}`);
   const flag = ctx.flags.get("message");
   const message =
     typeof flag === "string" && flag ? flag : await askText("New first message");
@@ -566,64 +633,60 @@ async function editDraft(ctx: SequenceContext, name: string | undefined): Promis
     finish("Unchanged.");
     return 1;
   }
-  const updated: SequenceDraft = {
-    ...entry.draft,
-    steps: [{ text: message, delayHours: 0, isStop: false }, ...entry.draft.steps.slice(1)],
-  };
-  const problems = validateDraft(updated);
-  if (problems.length > 0) {
-    for (const problem of problems) console.error(`  ${problem.field}: ${problem.problem}`);
-    return 1;
-  }
-  saveDraft(ctx.root, updated, new Date(ctx.now()).toISOString());
-  finish(`Updated "${updated.name}".`);
+  finish(`Updated sequence "${target.name}".`);
   return 0;
 }
 
-async function removeDraft(ctx: SequenceContext, name: string | undefined): Promise<number> {
-  if (!name) {
+async function removeDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
+  if (!nameOrId) {
     console.error("blaster sequence rm: name the sequence");
     return 1;
   }
-  if (!deleteDraft(ctx.root, name)) {
-    console.error(`No sequence named "${name}".`);
-    return 1;
+  const live = await liveClient(ctx);
+  if (typeof live === "number") return live;
+
+  const [sequences, drafts] = await Promise.all([
+    live.client.listSequences(),
+    live.client.listSequenceDrafts(),
+  ]);
+
+  const seq = sequences.find((s) => s.id === nameOrId || s.name.toLowerCase() === nameOrId.toLowerCase());
+  if (seq) {
+    await live.client.deleteSequence(seq.id);
+    console.log(`Removed sequence "${seq.name}" (${seq.id}) from Convex.`);
+    return 0;
   }
-  console.log(`Removed "${name}".`);
-  return 0;
+
+  const draft = drafts.find((d) => d._id === nameOrId || d.name.toLowerCase() === nameOrId.toLowerCase());
+  if (draft) {
+    await live.client.discardSequenceDraft(draft._id);
+    console.log(`Discarded sequence draft "${draft.name}" (${draft._id}) from Convex.`);
+    return 0;
+  }
+
+  console.error(`No sequence or draft named "${nameOrId}".`);
+  return 1;
 }
 
-
-/**
- * Which recorded sequence an action applies to.
- *
- * A menu of what exists rather than a free-text name, because the operator
- * already has the list in front of them and mistyping a name is the only way
- * this can go wrong. Returns null on cancel or when nothing is recorded.
- */
 async function pickName(ctx: SequenceContext, verb: string): Promise<string | null> {
-  const drafts = readDrafts(ctx.root);
-  if (drafts.length === 0) {
-    fail(`No sequences recorded yet, so there is nothing to ${verb}.`);
+  const live = await liveClient(ctx);
+  if (typeof live === "number") return null;
+
+  const sequences = await live.client.listSequences();
+  if (sequences.length === 0) {
+    fail(`No sequences recorded yet in Convex, so there is nothing to ${verb}.`);
     return null;
   }
   return await askSelect(
     `Which sequence to ${verb}?`,
-    drafts.map((entry) => ({
-      value: entry.draft.name,
-      label: entry.draft.name,
-      hint: entry.draft.fromNumber,
+    sequences.map((entry) => ({
+      value: entry.id,
+      label: entry.name,
+      hint: `${entry.status}${entry.poolId ? ` pool=${entry.poolId}` : ""}`,
     })),
   );
 }
 
-/**
- * Run one chosen action and report whether to keep the menu open.
- *
- * A non-zero result ends the session rather than looping. Returning to the menu
- * after a failure would throw away the exit code the action just produced, and a
- * caller that scripted this would see success for a run that recorded nothing.
- */
 async function dispatch(
   ctx: SequenceContext,
   choice: string,
@@ -658,30 +721,18 @@ async function dispatch(
   }
 }
 
-/**
- * What a bare `blaster sequence` opens.
- *
- * No action is a question rather than a request for help text, so in a terminal
- * it answers with a menu and asks for whatever the choice still needs. It loops
- * because the useful thing after building a draft is to look at it, and the
- * useful thing after looking at it is to edit it; making the operator retype
- * `blaster sequence show <name>` to get there would be the friction this
- * replaces.
- *
- * Actions that need a recorded sequence are only offered when one exists, so the
- * menu cannot dead-end on a choice that has nothing to act on.
- */
 export async function sequenceMenu(ctx: SequenceContext): Promise<number> {
   begin("blaster sequence");
-  // Checked before the first question, not when the first action happens to need
-  // it. Every action here reads the account, and finding out after typing a
-  // sequence name that the session is dead is the worst order to find out in.
   const live = await liveClient(ctx);
   if (typeof live === "number") return live;
+
   for (;;) {
-    const recorded = readDrafts(ctx.root).length;
+    const sequences = await live.client.listSequences().catch(() => []);
+    const drafts = await live.client.listSequenceDrafts().catch(() => []);
+    const recorded = sequences.length + drafts.length;
+
     const choice = await askSelect("What next?", [
-      { value: "new", label: "New sequence", hint: "build a draft" },
+      { value: "new", label: "New sequence", hint: "build or resume a draft" },
       ...(recorded > 0
         ? [
             { value: "show", label: "Show one", hint: "steps and plan" },
@@ -689,8 +740,8 @@ export async function sequenceMenu(ctx: SequenceContext): Promise<number> {
             { value: "edit", label: "Edit first message", hint: "rewrite step one" },
           ]
         : []),
-      { value: "list", label: "List recorded", hint: `${recorded} so far` },
-      ...(recorded > 0 ? [{ value: "rm", label: "Forget a draft", hint: "delete it" }] : []),
+      { value: "list", label: "List recorded", hint: `${recorded} in Convex` },
+      ...(recorded > 0 ? [{ value: "rm", label: "Forget a draft/sequence", hint: "delete from Convex" }] : []),
       { value: "__done", label: "Done", hint: "leave the menu" },
     ]);
     if (choice === null) return abort("Nothing");
@@ -727,8 +778,6 @@ export async function sequenceMain(
     case "delete":
       return await removeDraft(ctx, name);
     case undefined:
-      // The menu where there is someone to answer it. Everywhere else the usage
-      // text is the right answer, because a prompt on a pipe hangs forever.
       if (!isInteractive(ctx.json)) {
         console.log(SEQUENCE_USAGE);
         return 0;

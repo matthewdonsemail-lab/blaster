@@ -228,3 +228,59 @@ written down here rather than rediscovered per project. The rule that decides
 *which* name you use is the first question to ask: what is the source of this
 name? If the answer is a Twenty object, copy Twenty's spelling and add the name
 to `config/twenty-objects.json` if it is not there yet.
+
+## Operation naming conventions
+
+Beyond file and directory structure, exported TypeScript functions, shared client
+methods, API endpoints, CLI commands, and MCP tools follow a unified domain vocabulary.
+
+### 1. TypeScript operations and client methods
+Following [Google TypeScript Style Guide](https://google.github.io/styleguide/tsguide.html)
+and [Google AIP-190/AIP-131–136](https://google.aip.dev/131):
+
+- **Identifier casing**: camelCase for functions and methods (`listPools`, `getSequenceDraft`),
+  PascalCase for types and interfaces (`PoolDetail`, `SequenceDraftRecord`), UPPER_SNAKE_CASE
+  for global constants (`DEFAULT_OPTIONS`).
+- **Standard operations**:
+  - `list<Resources>`: Paginated or filtered retrieval of multiple entities (`listPools`, `listSequences`, `listSequenceDrafts`, `listConversations`).
+  - `get<Resource>`: Retrieval of a single entity by identity (`getPool`, `getSequence`, `getSequenceDraft`). Avoid appending `ById` when unambiguous.
+  - `create<Resource>`: Allocation and storage of a new entity (`createPool`, `createSequence`).
+  - `update<Resource>`: Mutation of existing entity state.
+  - `delete<Resource>`: Removal or soft-deletion of an entity (`deleteSequence`).
+- **Custom operations & lifecycle transitions**:
+  - Specific domain transitions use strong lifecycle verbs: `activateSequence`, `commitSequenceDraft`, `discardSequenceDraft`, `saveSequenceDraft`, `enrollRecipients`.
+  - Avoid vague verbs like `handle`, `process`, or `manage`.
+
+### 2. Resource-oriented HTTP API routes
+Resource-oriented design ([Google AIP-121](https://google.aip.dev/121)):
+
+- **Resource paths**: Plural kebab-case nouns mounted under `/api`:
+  - `/api/pools`
+  - `/api/sequences`
+  - `/api/sequence-drafts`
+  - `/api/conversations`
+  - `/api/suppressions`
+- **Sub-resources**: Natural hierarchy using IDs:
+  - `/api/pools/:id/numbers`
+  - `/api/conversations/:id/messages`
+- **HTTP methods**:
+  - `GET`: Safe, idempotent reads (`GET /api/pools`, `GET /api/pools/:id`).
+  - `POST`: Creation (`POST /api/pools`, `POST /api/sequences`).
+  - `PUT`/`PATCH`: Modification or reordering (`PUT /api/pools/:id/numbers`).
+  - `DELETE`: Deletion (`DELETE /api/sequences/:id`, `DELETE /api/sequence-drafts/:id`).
+- **Custom actions**: Represented as a POST to a sub-action segment:
+  - `POST /api/sequences/:id/activate`
+  - `POST /api/sequence-drafts/:id/commit`
+  - `POST /api/sequences/:id/enroll`
+
+### 3. Hexagonal architecture & cross-surface parity
+Per Alistair Cockburn's [Hexagonal Architecture](https://alistair.cockburn.us/hexagonal-architecture):
+
+- **Core domain**: `@blaster/core` owns domain entities, business logic, and capability specifications.
+- **Driving adapters (Inbound)**: Hono API, CLI (`@blaster/cli`), MCP server (`@blaster/mcp`),
+  and direct Convex HTTP router adapt incoming operator, client, or agent commands to domain calls.
+- **Driven adapters (Outbound)**: Twenty SDK, Telnyx SDK, and Convex backend client adapt persistence and external providers.
+- **Canonical capability parity**: Each domain capability maps explicitly across all active surfaces:
+  Convex function $\leftrightarrow$ Hono route $\leftrightarrow$ Core client method $\leftrightarrow$ CLI command $\leftrightarrow$ MCP tool.
+  Every capability is declared in `@blaster/core` (`CAPABILITY_REGISTRY`) and validated by `scripts/check-surfaces.mjs`.
+
