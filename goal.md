@@ -1,7 +1,7 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-02T01:43:12Z
+updated: 2026-10-02T01:56:43Z
 commit: inbox: one row per person in the pool view
 -->
 
