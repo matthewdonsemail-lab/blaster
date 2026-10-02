@@ -1,8 +1,8 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-02T02:19:22Z
-commit: inbox: one row per person in the pool view
+updated: 2026-10-02T03:26:21Z
+commit: docs: README lists only live CLI and MCP tools; check:surfaces enforces it
 -->
 
 The running scope for the number-pool objective. `scripts/check-goal.mjs` refuses
@@ -147,5 +147,6 @@ the per-number or account ceiling.
 - [x] Convex codegen, not hand-edited `_generated`: `scripts/convex-codegen.mjs` regenerates `api.d.ts`/`server.d.ts` from the local tree (no deployment login needed); `check:generated` keeps them current; `check:convex` exempts the `convex/http/` router from R8 with a documented note
 - [x] Operator routes mirrored on the Convex HTTP router: `convex/http/` registers pools, sequences, suppressions, and conversations routes so a site with no Hono in front still answers them; `check:surfaces` now verifies the mirror and rejects drift in both directions
 - [x] OpenAPI spec at `openapi.yaml` generated from the deployment by the official `convex-helpers open-api-spec` CLI (`pnpm openapi` to refresh); documents the Convex function surface including internal actions
+- [x] Open the PR and get the pool branch merged to `main` (ticket 05) — merged 2026-10-02, `9b70ac3`
+- [ ] README reflects only live, relay-contracted CLI and MCP tools; `check:surfaces` enforces it as a pre-push gate
 - [ ] Authored docs aligned to current state: docs/sequencer.md delivery step, docs/architecture.md gates table, docs/README.md authored index, docs/deployment.md rewritten for Railcode
-- [ ] Open the PR and get the pool branch merged to `main` (ticket 05)

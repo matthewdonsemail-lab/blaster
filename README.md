@@ -98,6 +98,21 @@ blaster profile --to +353871234567     # which profile a recipient resolves to
 blaster prospects agencyLeads --json    # records straight from Twenty
 blaster capabilities                    # every capability and its surfaces
 blaster send --to <to> --from <from> --text <text>
+blaster numbers search --country IE     # available Telnyx inventory
+blaster numbers buy --number +353871234567
+blaster numbers owned
+blaster phones list
+blaster inbox list --person             # one row per person, pool numbers folded
+blaster inbox show <conversation-id>
+blaster sequence validate               # piped JSON draft
+blaster sequence enroll <seq-id> --filters '<json>'
+blaster pool                            # interactive wizard (Clack prompts)
+blaster pools create --name "Ireland outbound"
+blaster pools add-number --pool <id> --number +353871234567
+blaster pools assign --sequence <seq-id> --pool <id>
+blaster suppress list
+blaster suppress add --peer +353871234567 --reason "inbound STOP"
+blaster login
 ```
 
 ```json
@@ -116,10 +131,12 @@ MCP tools: `blaster_breakdown`, `blaster_env`, `blaster_messaging_profile`,
 `blaster_send_message`, `blaster_list_records`, `blaster_search_numbers`,
 `blaster_purchase_number`, `blaster_list_numbers`, `blaster_sync_phones`,
 `blaster_validate_sequence`, `blaster_preview_sequence`,
-`blaster_list_conversations`, `blaster_get_messages`, `blaster_list_pools`,
-`blaster_get_pool`, `blaster_create_pool`, `blaster_add_pool_number`,
-`blaster_remove_pool_number`, `blaster_reorder_pool`,
-`blaster_set_sequence_pool`.
+`blaster_list_conversations`, `blaster_list_conversation_persons`,
+`blaster_get_messages`, `blaster_list_pools`, `blaster_get_pool`,
+`blaster_create_pool`, `blaster_add_pool_number`, `blaster_remove_pool_number`,
+`blaster_reorder_pool`, `blaster_set_sequence_pool`,
+`blaster_enroll_recipients`, `blaster_list_suppressions`,
+`blaster_set_suppression`.
 
 ## What is inside
 
@@ -188,14 +205,19 @@ Convex functions deploy separately with `pnpm convex:deploy`.
 
 | Gate | Enforces |
 | --- | --- |
-| `check:secrets:self-test` | the scanner still separates known-bad from known-good fixtures |
 | `check:secrets` | no credential is committed |
+| `check:secrets:self-test` | the scanner still separates known-bad from known-good fixtures |
+| `check:goal` | `goal.md` is a current outline (updated within 20 min) |
 | `check:naming` | the `{library}/{domainname}/helpers` convention |
+| `check:convex` | backend structure: kebab-case, domain `index.ts`, named exports |
+| `check:surfaces` | the capability registry, MCP tools, and HTTP routes agree |
 | `check:env` | the manifest and the code agree, in both directions |
 | `check:no-emoji` | no emoji anywhere in the repository |
 | `check:no-font-mono` | forbids any fixed-width font from rendering |
+| `check:encoding` | no mojibake introduced by editor or tool drift |
 | `typecheck` | all four packages, strict |
-| `test` | the pure logic |
+| `lint` | Convex lint (after typecheck, since two rules need type information) |
+| `test` | the pure logic plus the `convex/test` integration harness |
 
 The secret scan runs first because a credential leak is the worst outcome
 available and the only failure no later gate would catch.

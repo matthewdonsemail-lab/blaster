@@ -33,6 +33,7 @@ const CLI_SOURCE = join(root, "packages/blaster-cli/src/cli/index.ts");
 const MCP_SOURCE = join(root, "packages/blaster-mcp/src/mcp/index.ts");
 const API_SOURCE = join(root, "apps/api/src/index.ts");
 const CONVEX_HTTP_DIR = join(root, "convex/http");
+const README = join(root, "README.md");
 
 const violations = [];
 const report = (message) => violations.push(message);
@@ -158,6 +159,20 @@ function check() {
         report(`capability "${cap.id}" has an unparsable http surface "${cap.http}".`);
       } else if (!routes.has(`${method} ${path}`) && !routes.has(`${method} ${path.split("?")[0]}`)) {
         report(`capability "${cap.id}" names HTTP route "${cap.http}", which the API does not register.`);
+      }
+    }
+  }
+
+  // The README must not advertise an MCP tool the server does not register:
+  // every `blaster_<tool>` it names must be a real, advertised tool. The
+  // README is the first thing a new reader copies, so a phantom tool there is
+  // the drift this gate exists to catch.
+  const readme = read(README);
+  if (readme !== "") {
+    for (const name of readme.matchAll(/blaster_[a-z0-9_]+/g)) {
+      const tool = name[0];
+      if (!advertised.has(tool)) {
+        report(`README.md names MCP tool "${tool}", which the MCP server does not advertise.`);
       }
     }
   }
