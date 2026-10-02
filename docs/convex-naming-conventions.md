@@ -197,6 +197,14 @@ client-reachable, so a future change to a public function's exposure cannot
 silently widen what the backend itself can invoke. The framework's own
 best-practices page recommends the same split. ([Best practices](https://docs.convex.dev/understanding/best-practices/))
 
+One documented exception: the deployment's own HTTP router (`convex/http.ts`
+and the `convex/http/` domain groups) reaches the public functions it serves
+through `api.*`. The router is itself the public surface of a Convex
+deployment — a site with no Hono in front still answers on it — and its
+handlers exist to call those public functions. The convention is still
+enforced everywhere else in the tree; `check:convex` exempts the `http/`
+directory only.
+
 ### R9. No function re-exports through barrels
 Do not use barrel files to re-export Convex functions. Convex discovers
 exported functions by module path (F3), so re-exporting functions can create

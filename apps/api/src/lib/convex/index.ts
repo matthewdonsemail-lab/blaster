@@ -18,6 +18,7 @@ export {
   convexClient,
   createPool,
   getPool,
+  getSequenceById,
   listConversations,
   listLedgerNumbers,
   listPools,

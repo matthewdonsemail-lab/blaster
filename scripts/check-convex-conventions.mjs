@@ -144,8 +144,11 @@ function checkTree(convexDir, label) {
     }
 
     // R8: backend-only calls use internal.*, never api.*.
-    if (API_REF.test(code)) {
-      report(`${label}/${rel}`, "No api.* references inside convex/: cross-function calls use internal.* (rule R8).");
+    // Exempt: convex/http/* — the deployment's public HTTP router; its handlers
+    // exist to serve the public functions and calling them is the point.
+    const inHttp = segments[0] === "http";
+    if (API_REF.test(code) && !inHttp) {
+      report(`${label}/${rel}`, "No api.* references inside convex/: cross-function calls use internal.* (rule R8). The convex/http router is the one exception (rule R8 note).");
     }
   }
 }

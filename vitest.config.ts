@@ -25,5 +25,10 @@ export default defineConfig({
     // transform and import time, not a latency budget: every assertion here is
     // on a response status or a body, never on how long it took.
     testTimeout: 15_000,
+    // The same suites' beforeAll/afterAll await `convexTest`'s module-load
+    // machinery — the import cost the comment above describes. The default 5s
+    // hook ceiling flaked under load the same way the test ceiling did, so it
+    // gets the same value.
+    hookTimeout: 15_000,
   },
 });

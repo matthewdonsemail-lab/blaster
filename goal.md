@@ -1,7 +1,7 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-01T22:08:15Z
+updated: 2026-10-02T01:43:12Z
 commit: inbox: one row per person in the pool view
 -->
 
@@ -97,12 +97,32 @@ the per-number or account ceiling.
 - packages/blaster-cli/src/cli/suppress.ts
 - convex/sequence/enrollment.ts
 - convex/sequence/queries.ts
+- convex/http/pool.ts
+- convex/http/sequence.ts
+- convex/http/suppressions.ts
+- convex/http/conversations.ts
+- convex/http.ts
+- convex/_generated/api.d.ts
+- convex/_generated/server.d.ts
+- scripts/convex-codegen.mjs
+- scripts/openapi.mjs
+- scripts/check-surfaces.mjs
+- openapi.yaml
+- pnpm-lock.yaml
+- docs/convex-naming-conventions.md
+- docs/sequencer.md
+- docs/pools.md
+- convex/test/conversations.test.ts
+- convex/test/refs.ts
 - packages/core/src/blaster/api/types.ts
 - packages/core/src/blaster/api/helpers/client.ts
 - packages/blaster-cli/src/cli/inbox.ts
+- packages/blaster-cli/src/cli/index.ts
 - packages/blaster-mcp/src/mcp/index.ts
-- docs/sequencer.md
-- pnpm-lock.yaml
+- apps/api/src/index.ts
+- apps/api/src/lib/convex/helpers/client.ts
+- vitest.config.ts
+- package.json
 
 ## Task
 
@@ -124,4 +144,7 @@ the per-number or account ceiling.
 - [x] Decided the limiter/pool budget contract (ticket 03): limiter is the hard ceiling, pool paces at or under it
 - [x] Convex-Twenty seam: `sequence/actions.enrollRecipients` walks `agencyProspects` with the send filter DSL, enrolls, and mirrors `outboundState`; API/CLI/MCP surfaces
 - [x] Person-level inbox view (ticket 02 implementation): `groupBy: "person"` on `listConversations` folds one row per person over their pool numbers; `GET /api/conversations?groupBy=person`, core client `listConversationPersons`, `blaster inbox list --person`, MCP `blaster_list_conversation_persons`; integration tests
+- [x] Convex codegen, not hand-edited `_generated`: `scripts/convex-codegen.mjs` regenerates `api.d.ts`/`server.d.ts` from the local tree (no deployment login needed); `check:generated` keeps them current; `check:convex` exempts the `convex/http/` router from R8 with a documented note
+- [x] Operator routes mirrored on the Convex HTTP router: `convex/http/` registers pools, sequences, suppressions, and conversations routes so a site with no Hono in front still answers them; `check:surfaces` now verifies the mirror and rejects drift in both directions
+- [x] OpenAPI spec at `openapi.yaml` generated from the deployment by the official `convex-helpers open-api-spec` CLI (`pnpm openapi` to refresh); documents the Convex function surface including internal actions
 - [ ] Open the PR and get the pool branch merged to `main` (ticket 05)

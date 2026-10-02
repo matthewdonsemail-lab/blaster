@@ -350,6 +350,19 @@ export async function listSequences(): Promise<PoolResult<SequenceOption[]>> {
   });
 }
 
+/** One sequence with its steps, as the operator inbox reads it. */
+export async function getSequenceById(
+  sequenceId: string,
+): Promise<PoolResult<{ _id: string; name: string; status: string; poolId: string | null } | null>> {
+  return poolCall(async () => {
+    const row = await convexClient()!.query(api.sequence.queries.getSequence, {
+      sequenceId: sequenceId as Id<"sequences">,
+    });
+    if (!row) return null;
+    return { _id: row._id, name: row.name, status: row.status, poolId: row.poolId ?? null };
+  });
+}
+
 /** One row of the Convex phone ledger, as the ownership check reads it. */
 export interface LedgerNumber {
   phoneNumber: string;

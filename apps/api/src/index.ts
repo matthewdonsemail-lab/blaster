@@ -66,6 +66,7 @@ import {
   listLedgerNumbers,
   listPools,
   listSequences,
+  getSequenceById,
   listSuppressions,
   removePoolNumber,
   reorderPoolNumbers,
@@ -654,6 +655,14 @@ pools.get("/sequences", requireOperator, async (c) => {
   if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
   if (result.status === "failed") return c.json({ error: "Failed to list sequences", detail: result.error }, 502);
   return c.json({ count: result.value.length, sequences: result.value });
+});
+
+pools.get("/sequences/:id", requireOperator, async (c) => {
+  const result = await getSequenceById(c.req.param("id"));
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to read the sequence", detail: result.error }, 502);
+  if (result.value === null) return c.json({ error: "Unknown sequence" }, 404);
+  return c.json(result.value);
 });
 
 /**

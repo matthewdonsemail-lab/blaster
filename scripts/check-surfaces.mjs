@@ -10,12 +10,19 @@
 // It checks, without executing anything:
 //   - every registered MCP tool is advertised and implemented in the MCP server;
 //   - every HTTP route a capability names exists in the Hono surface;
-//   - capability ids are unique.
+//   - capability ids are unique;
+//   - and (new) every operator route a capability names that the Convex HTTP
+//     router registers, so a deployment with no Hono in front still answers it.
 //
-// It reads source with a regex rather than importing, because the CLI, the MCP
-// server, and the API each have their own entry side effects and build wiring.
+// The Convex mirror is the *subset* of the Hono surface that a deployment
+// itself can serve (routes whose handlers are Convex functions). Routes that
+// reach Twenty or Telnyx live on the Hono surface only — a Convex deployment
+// has no Twenty or Telnyx credentials of its own — and are not expected on the
+// router. The gate checks whichever side *exists*: a Convex route that the
+// Hono surface no longer has is a drift, and a capability naming a route that
+// is on neither surface is a phantom.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -25,6 +32,7 @@ const root = join(here, "..");
 const CLI_SOURCE = join(root, "packages/blaster-cli/src/cli/index.ts");
 const MCP_SOURCE = join(root, "packages/blaster-mcp/src/mcp/index.ts");
 const API_SOURCE = join(root, "apps/api/src/index.ts");
+const CONVEX_HTTP_DIR = join(root, "convex/http");
 
 const violations = [];
 const report = (message) => violations.push(message);
@@ -85,6 +93,32 @@ function httpRoutes(source) {
   return routes;
 }
 
+/**
+ * Every `http.route({ path, method })` registered on the Convex HTTP router,
+ * across the whole `convex/http/` tree. These are the deployment's own routes:
+ * a Convex site with no Hono in front still answers on them.
+ */
+function convexHttpRoutes() {
+  const routes = new Set();
+  let files = [];
+  try {
+    files = readdirSync(CONVEX_HTTP_DIR, { recursive: true });
+  } catch {
+    return routes;
+  }
+  for (const file of files) {
+    if (!String(file).endsWith(".ts")) continue;
+    const source = read(join(CONVEX_HTTP_DIR, String(file)));
+    // The router's `http.route({ path, method })` puts the path and method as
+    // two string literals in the same object.
+    const pattern = /path:\s*"([^"]+)",\s*method:\s*"([A-Z]+)"/g;
+    for (const match of source.matchAll(pattern)) {
+      routes.add(`${match[2]} ${match[1]}`);
+    }
+  }
+  return routes;
+}
+
 function check() {
   const cli = read(CLI_SOURCE);
   const mcp = read(MCP_SOURCE);
@@ -103,6 +137,7 @@ function check() {
   const advertised = advertisedTools(mcp);
   const implemented = implementedTools(mcp);
   const routes = httpRoutes(api);
+  const convexRoutes = convexHttpRoutes();
 
   for (const name of advertised) {
     if (!implemented.has(name)) report(`MCP tool "${name}" is advertised but has no runTool case.`);
@@ -124,6 +159,19 @@ function check() {
       } else if (!routes.has(`${method} ${path}`) && !routes.has(`${method} ${path.split("?")[0]}`)) {
         report(`capability "${cap.id}" names HTTP route "${cap.http}", which the API does not register.`);
       }
+    }
+  }
+
+  // The Convex router mirrors only the subset of the Hono surface it can serve
+  // on its own. A Hono route that the Convex router does not register is fine
+  // (a Twenty/Telnyx route the deployment cannot serve); the only drift is the
+  // reverse — a Convex route nothing on the Hono surface names. The legacy
+  // `/blaster/*` routes are intentional: deployment-inspection endpoints that
+  // exist on Convex directly and have no Hono twin.
+  for (const route of convexRoutes) {
+    if (route.startsWith("GET /blaster/") || route.startsWith("POST /blaster/")) continue;
+    if (!routes.has(route)) {
+      report(`the Convex HTTP router registers "${route}", but the Hono surface does not.`);
     }
   }
 }

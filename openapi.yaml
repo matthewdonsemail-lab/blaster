@@ -1,0 +1,2395 @@
+openapi: 3.0.3
+info:
+  title: Convex App - OpenAPI 3.0
+  version: 0.0.0
+servers:
+  - url: https://bold-caribou-638.convex.cloud
+security:
+  - bearerAuth: []
+tags:
+  - name: query
+    description: Functions that read data
+  - name: mutation
+    description: Functions that write/update/delete data
+  - name: action
+    description: Functions that can make calls to external APIs
+paths:
+  /api/run/blaster/mutations/recordNotification:
+    post:
+      summary: Calls a mutation at the path blaster/mutations.js:recordNotification
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_blaster.mutations.recordNotification"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_blaster.mutations.recordNotification"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/blaster/mutations/upsertMessagingProfile:
+    post:
+      summary: Calls a mutation at the path blaster/mutations.js:upsertMessagingProfile
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_blaster.mutations.upsertMessagingProfile"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_blaster.mutations.upsertMessagingProfile"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/blaster/queries/envStatus:
+    post:
+      summary: Calls a query at the path blaster/queries.js:envStatus
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_blaster.queries.envStatus"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_blaster.queries.envStatus"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/blaster/queries/environment:
+    post:
+      summary: Calls a query at the path blaster/queries.js:environment
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_blaster.queries.environment"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_blaster.queries.environment"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/blaster/queries/listMessagingProfiles:
+    post:
+      summary: Calls a query at the path blaster/queries.js:listMessagingProfiles
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_blaster.queries.listMessagingProfiles"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_blaster.queries.listMessagingProfiles"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/blaster/queries/listNotifications:
+    post:
+      summary: Calls a query at the path blaster/queries.js:listNotifications
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_blaster.queries.listNotifications"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_blaster.queries.listNotifications"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/conversations/mutations/applyOutboundStatus:
+    post:
+      summary: Calls a mutation at the path conversations/mutations.js:applyOutboundStatus
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_conversations.mutations.applyOutboundStatus"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_conversations.mutations.applyOutboundStatus"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/conversations/mutations/recordInboundMessage:
+    post:
+      summary: Calls a mutation at the path conversations/mutations.js:recordInboundMessage
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_conversations.mutations.recordInboundMessage"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_conversations.mutations.recordInboundMessage"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/conversations/queries/conversationForNumber:
+    post:
+      summary: Calls a query at the path conversations/queries.js:conversationForNumber
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_conversations.queries.conversationForNumber"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_conversations.queries.conversationForNumber"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/conversations/queries/conversationMessages:
+    post:
+      summary: Calls a query at the path conversations/queries.js:conversationMessages
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_conversations.queries.conversationMessages"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_conversations.queries.conversationMessages"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/conversations/queries/listConversations:
+    post:
+      summary: Calls a query at the path conversations/queries.js:listConversations
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_conversations.queries.listConversations"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_conversations.queries.listConversations"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/phoneNumbers/actions/purchaseNumbers:
+    post:
+      summary: Calls a action at the path phoneNumbers/actions.js:purchaseNumbers
+      tags:
+        - action
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_phoneNumbers.actions.purchaseNumbers"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_phoneNumbers.actions.purchaseNumbers"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/phoneNumbers/actions/searchAvailable:
+    post:
+      summary: Calls a action at the path phoneNumbers/actions.js:searchAvailable
+      tags:
+        - action
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_phoneNumbers.actions.searchAvailable"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_phoneNumbers.actions.searchAvailable"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/phoneNumbers/mutations/importTwentyPhones:
+    post:
+      summary: Calls a mutation at the path phoneNumbers/mutations.js:importTwentyPhones
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_phoneNumbers.mutations.importTwentyPhones"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_phoneNumbers.mutations.importTwentyPhones"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/phoneNumbers/mutations/setMessagingBinding:
+    post:
+      summary: Calls a mutation at the path phoneNumbers/mutations.js:setMessagingBinding
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_phoneNumbers.mutations.setMessagingBinding"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_phoneNumbers.mutations.setMessagingBinding"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/phoneNumbers/mutations/storePhoneNumber:
+    post:
+      summary: Calls a mutation at the path phoneNumbers/mutations.js:storePhoneNumber
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_phoneNumbers.mutations.storePhoneNumber"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_phoneNumbers.mutations.storePhoneNumber"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/phoneNumbers/queries/getPhoneNumber:
+    post:
+      summary: Calls a query at the path phoneNumbers/queries.js:getPhoneNumber
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_phoneNumbers.queries.getPhoneNumber"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_phoneNumbers.queries.getPhoneNumber"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/phoneNumbers/queries/listPhoneNumbers:
+    post:
+      summary: Calls a query at the path phoneNumbers/queries.js:listPhoneNumbers
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_phoneNumbers.queries.listPhoneNumbers"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_phoneNumbers.queries.listPhoneNumbers"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/actions/runDueEnrollments:
+    post:
+      summary: Calls a action at the path sequence/actions.js:runDueEnrollments
+      tags:
+        - action
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.actions.runDueEnrollments"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.actions.runDueEnrollments"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/actions/runEnrollmentStep:
+    post:
+      summary: Calls a action at the path sequence/actions.js:runEnrollmentStep
+      tags:
+        - action
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.actions.runEnrollmentStep"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.actions.runEnrollmentStep"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/mutations/applySchedule:
+    post:
+      summary: Calls a mutation at the path sequence/mutations.js:applySchedule
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.mutations.applySchedule"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.mutations.applySchedule"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/mutations/claimStep:
+    post:
+      summary: Calls a mutation at the path sequence/mutations.js:claimStep
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.mutations.claimStep"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.mutations.claimStep"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/mutations/completeEnrollment:
+    post:
+      summary: Calls a mutation at the path sequence/mutations.js:completeEnrollment
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.mutations.completeEnrollment"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.mutations.completeEnrollment"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/mutations/createSequence:
+    post:
+      summary: Calls a mutation at the path sequence/mutations.js:createSequence
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.mutations.createSequence"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.mutations.createSequence"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/mutations/enroll:
+    post:
+      summary: Calls a mutation at the path sequence/mutations.js:enroll
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.mutations.enroll"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.mutations.enroll"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/mutations/recordStep:
+    post:
+      summary: Calls a mutation at the path sequence/mutations.js:recordStep
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.mutations.recordStep"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.mutations.recordStep"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/mutations/setSequenceStatus:
+    post:
+      summary: Calls a mutation at the path sequence/mutations.js:setSequenceStatus
+      tags:
+        - mutation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.mutations.setSequenceStatus"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.mutations.setSequenceStatus"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/queries/dueEnrollments:
+    post:
+      summary: Calls a query at the path sequence/queries.js:dueEnrollments
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.queries.dueEnrollments"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.queries.dueEnrollments"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/queries/getSequence:
+    post:
+      summary: Calls a query at the path sequence/queries.js:getSequence
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.queries.getSequence"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.queries.getSequence"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/queries/listEnrollments:
+    post:
+      summary: Calls a query at the path sequence/queries.js:listEnrollments
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.queries.listEnrollments"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.queries.listEnrollments"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/queries/listSequences:
+    post:
+      summary: Calls a query at the path sequence/queries.js:listSequences
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.queries.listSequences"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.queries.listSequences"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/queries/loadRunContext:
+    post:
+      summary: Calls a query at the path sequence/queries.js:loadRunContext
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.queries.loadRunContext"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.queries.loadRunContext"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/queries/runDueEnrollmentIds:
+    post:
+      summary: Calls a query at the path sequence/queries.js:runDueEnrollmentIds
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.queries.runDueEnrollmentIds"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.queries.runDueEnrollmentIds"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+  /api/run/sequence/queries/validateSequence:
+    post:
+      summary: Calls a query at the path sequence/queries.js:validateSequence
+      tags:
+        - query
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Request_sequence.queries.validateSequence"
+        required: true
+      responses:
+        "200":
+          description: Convex executed your request and returned a result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Response_sequence.queries.validateSequence"
+        "400":
+          description: Failed operation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+        "500":
+          description: Convex Internal Error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailedResponse"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token of the format "Bearer {token}" for normal authentication and "Convex {token}" for admin tokens.
+  schemas:
+    Request_blaster.mutations.recordNotification:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - message
+            - ruleId
+            - severity
+            - stateKey
+          properties:
+            message:
+              type: string
+            ruleId:
+              type: string
+            severity:
+              oneOf:
+                - type: string
+                  enum:
+                    - "info"
+                - type: string
+                  enum:
+                    - "warning"
+                - type: string
+                  enum:
+                    - "critical"
+            stateKey:
+              type: string
+
+    Response_blaster.mutations.recordNotification:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_blaster.mutations.upsertMessagingProfile:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - country
+            - profileId
+          properties:
+            alphaSender:
+              type: string
+            country:
+              type: string
+            profileId:
+              type: string
+            tenDlcCampaignId:
+              type: string
+
+    Response_blaster.mutations.upsertMessagingProfile:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_blaster.queries.envStatus:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+
+    Response_blaster.queries.envStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_blaster.queries.environment:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+
+    Response_blaster.queries.environment:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_blaster.queries.listMessagingProfiles:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+
+    Response_blaster.queries.listMessagingProfiles:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_blaster.queries.listNotifications:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          properties:
+            limit:
+              type: number
+
+    Response_blaster.queries.listNotifications:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_conversations.mutations.applyOutboundStatus:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - status
+            - telnyxMessageId
+          properties:
+            eventType:
+              type: string
+            status:
+              type: string
+            telnyxMessageId:
+              type: string
+
+    Response_conversations.mutations.applyOutboundStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_conversations.mutations.recordInboundMessage:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - body
+            - from
+            - to
+          properties:
+            body:
+              type: string
+            from:
+              type: string
+            media:
+              type: array
+              items:
+                type: object
+                required:
+                  - url
+                properties:
+                  contentType:
+                    type: string
+                  size:
+                    type: number
+                  url:
+                    type: string
+            optedOut:
+              type: boolean
+            providerEventId:
+              type: string
+            receivedAt:
+              type: number
+            telnyxMessageId:
+              type: string
+            to:
+              type: string
+
+    Response_conversations.mutations.recordInboundMessage:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_conversations.queries.conversationForNumber:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - phoneNumber
+          properties:
+            blasterNumber:
+              type: string
+            phoneNumber:
+              type: string
+
+    Response_conversations.queries.conversationForNumber:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_conversations.queries.conversationMessages:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - conversationId
+          properties:
+            conversationId:
+              type: string
+              description: ID from table "conversations"
+            limit:
+              type: number
+
+    Response_conversations.queries.conversationMessages:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_conversations.queries.listConversations:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          properties:
+            campaign:
+              type: string
+            limit:
+              type: number
+            number:
+              type: string
+            withCampaign:
+              type: boolean
+
+    Response_conversations.queries.listConversations:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_phoneNumbers.actions.purchaseNumbers:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - phoneNumbers
+          properties:
+            customerReference:
+              type: string
+            messagingProfileId:
+              type: string
+            phoneNumbers:
+              type: array
+              items:
+                type: string
+
+    Response_phoneNumbers.actions.purchaseNumbers:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_phoneNumbers.actions.searchAvailable:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          properties:
+            administrativeArea:
+              type: string
+            contains:
+              type: string
+            countryCode:
+              type: string
+            endsWith:
+              type: string
+            features:
+              type: string
+            limit:
+              type: number
+            locality:
+              type: string
+            numberType:
+              type: string
+            startsWith:
+              type: string
+
+    Response_phoneNumbers.actions.searchAvailable:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_phoneNumbers.mutations.importTwentyPhones:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - phones
+          properties:
+            phones:
+              type: array
+              items:
+                type: object
+                required:
+                  - phoneNumber
+                properties:
+                  administrativeArea:
+                    type: string
+                  countryCode:
+                    type: string
+                  currency:
+                    type: string
+                  features:
+                    type: array
+                    items:
+                      type: string
+                  locality:
+                    type: string
+                  messagingProfileId:
+                    type: string
+                  monthlyCost:
+                    type: string
+                  numberType:
+                    type: string
+                  orderId:
+                    type: string
+                  phoneNumber:
+                    type: string
+                  purchasedAt:
+                    type: number
+                  quickship:
+                    type: boolean
+                  rateCenter:
+                    type: string
+                  reservable:
+                    type: boolean
+                  status:
+                    type: string
+                  telnyxNumberId:
+                    type: string
+                  upfrontCost:
+                    type: string
+
+    Response_phoneNumbers.mutations.importTwentyPhones:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_phoneNumbers.mutations.setMessagingBinding:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - messagingProfileId
+            - phoneNumber
+          properties:
+            messagingProfileId:
+              type: string
+            phoneNumber:
+              type: string
+
+    Response_phoneNumbers.mutations.setMessagingBinding:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_phoneNumbers.mutations.storePhoneNumber:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - phone
+          properties:
+            phone:
+              type: object
+              required:
+                - phoneNumber
+              properties:
+                administrativeArea:
+                  type: string
+                countryCode:
+                  type: string
+                currency:
+                  type: string
+                features:
+                  type: array
+                  items:
+                    type: string
+                locality:
+                  type: string
+                messagingProfileId:
+                  type: string
+                monthlyCost:
+                  type: string
+                numberType:
+                  type: string
+                orderId:
+                  type: string
+                phoneNumber:
+                  type: string
+                purchasedAt:
+                  type: number
+                quickship:
+                  type: boolean
+                rateCenter:
+                  type: string
+                reservable:
+                  type: boolean
+                status:
+                  type: string
+                telnyxNumberId:
+                  type: string
+                upfrontCost:
+                  type: string
+
+    Response_phoneNumbers.mutations.storePhoneNumber:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_phoneNumbers.queries.getPhoneNumber:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - phoneNumber
+          properties:
+            phoneNumber:
+              type: string
+
+    Response_phoneNumbers.queries.getPhoneNumber:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_phoneNumbers.queries.listPhoneNumbers:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+
+    Response_phoneNumbers.queries.listPhoneNumbers:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.actions.runDueEnrollments:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          properties:
+            limit:
+              type: number
+            now:
+              type: number
+
+    Response_sequence.actions.runDueEnrollments:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.actions.runEnrollmentStep:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - enrollmentId
+          properties:
+            enrollmentId:
+              type: string
+              description: ID from table "sequenceEnrollments"
+            now:
+              type: number
+
+    Response_sequence.actions.runEnrollmentStep:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.mutations.applySchedule:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - enrollmentId
+            - status
+          properties:
+            attempts:
+              type: number
+            enrollmentId:
+              type: string
+              description: ID from table "sequenceEnrollments"
+            lastSkipReason:
+              type: string
+            nextDueAt:
+              type: number
+            status:
+              oneOf:
+                - type: string
+                  enum:
+                    - "active"
+                - type: string
+                  enum:
+                    - "paused"
+                - type: string
+                  enum:
+                    - "awaiting-human"
+                - type: string
+                  enum:
+                    - "completed"
+
+    Response_sequence.mutations.applySchedule:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.mutations.claimStep:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - cursor
+            - enrollmentId
+          properties:
+            cursor:
+              type: number
+            enrollmentId:
+              type: string
+              description: ID from table "sequenceEnrollments"
+
+    Response_sequence.mutations.claimStep:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.mutations.completeEnrollment:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - enrollmentId
+          properties:
+            enrollmentId:
+              type: string
+              description: ID from table "sequenceEnrollments"
+
+    Response_sequence.mutations.completeEnrollment:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.mutations.createSequence:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - fromNumber
+            - name
+            - steps
+          properties:
+            campaignId:
+              type: string
+            fromNumber:
+              type: string
+            name:
+              type: string
+            numberProfileId:
+              type: string
+            options:
+              type: object
+              required:
+                - dailyCapPerRecipient
+                - requireProfileForCountry
+                - respectDoNotContact
+                - stopOnReply
+              properties:
+                dailyCapPerRecipient:
+                  type: number
+                requireProfileForCountry:
+                  type: boolean
+                respectDoNotContact:
+                  type: boolean
+                stopOnReply:
+                  type: boolean
+            steps:
+              type: array
+              items:
+                type: object
+                required:
+                  - delayHours
+                  - isStop
+                  - text
+                properties:
+                  delayHours:
+                    type: number
+                  isStop:
+                    type: boolean
+                  text:
+                    type: string
+
+    Response_sequence.mutations.createSequence:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.mutations.enroll:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - recipientId
+            - sequenceId
+          properties:
+            country:
+              type: string
+            doNotContact:
+              type: boolean
+            ownerMemberId:
+              type: string
+            recipientId:
+              type: string
+            sequenceId:
+              type: string
+              description: ID from table "sequences"
+            to:
+              type: string
+
+    Response_sequence.mutations.enroll:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.mutations.recordStep:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - enrollmentId
+            - outcome
+            - steps
+          properties:
+            enrollmentId:
+              type: string
+              description: ID from table "sequenceEnrollments"
+            message:
+              type: object
+              required:
+                - from
+                - sentAt
+                - telnyxMessageId
+                - text
+                - to
+              properties:
+                from:
+                  type: string
+                sentAt:
+                  type: number
+                telnyxMessageId:
+                  type: string
+                text:
+                  type: string
+                to:
+                  type: string
+            outcome:
+              oneOf:
+                - type: string
+                  enum:
+                    - "sent"
+                - type: string
+                  enum:
+                    - "failed"
+                - type: string
+                  enum:
+                    - "skipped"
+                - type: string
+                  enum:
+                    - "replied"
+                - type: string
+                  enum:
+                    - "opted-out"
+                - type: string
+                  enum:
+                    - "ambiguous"
+            skipReason:
+              type: string
+            steps:
+              type: array
+              items:
+                type: object
+                required:
+                  - delayHours
+                  - isStop
+                  - text
+                properties:
+                  delayHours:
+                    type: number
+                  isStop:
+                    type: boolean
+                  text:
+                    type: string
+
+    Response_sequence.mutations.recordStep:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.mutations.setSequenceStatus:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - sequenceId
+            - status
+          properties:
+            sequenceId:
+              type: string
+              description: ID from table "sequences"
+            status:
+              oneOf:
+                - type: string
+                  enum:
+                    - "draft"
+                - type: string
+                  enum:
+                    - "active"
+                - type: string
+                  enum:
+                    - "paused"
+                - type: string
+                  enum:
+                    - "completed"
+
+    Response_sequence.mutations.setSequenceStatus:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.queries.dueEnrollments:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          properties:
+            limit:
+              type: number
+            now:
+              type: number
+
+    Response_sequence.queries.dueEnrollments:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.queries.getSequence:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - sequenceId
+          properties:
+            sequenceId:
+              type: string
+              description: ID from table "sequences"
+
+    Response_sequence.queries.getSequence:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.queries.listEnrollments:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - sequenceId
+          properties:
+            limit:
+              type: number
+            sequenceId:
+              type: string
+              description: ID from table "sequences"
+
+    Response_sequence.queries.listEnrollments:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.queries.listSequences:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          properties:
+            limit:
+              type: number
+
+    Response_sequence.queries.listSequences:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.queries.loadRunContext:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - enrollmentId
+          properties:
+            enrollmentId:
+              type: string
+              description: ID from table "sequenceEnrollments"
+            now:
+              type: number
+
+    Response_sequence.queries.loadRunContext:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.queries.runDueEnrollmentIds:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          properties:
+            limit:
+              type: number
+            now:
+              type: number
+
+    Response_sequence.queries.runDueEnrollmentIds:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    Request_sequence.queries.validateSequence:
+      type: object
+      required:
+        - args
+      properties:
+        args:
+          type: object
+          required:
+            - fromNumber
+            - name
+            - steps
+          properties:
+            dailyCapPerRecipient:
+              type: number
+            fromNumber:
+              type: string
+            name:
+              type: string
+            steps:
+              type: array
+              items:
+                type: object
+                required:
+                  - delayHours
+                  - isStop
+                  - text
+                properties:
+                  delayHours:
+                    type: number
+                  isStop:
+                    type: boolean
+                  text:
+                    type: string
+
+    Response_sequence.queries.validateSequence:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - "success"
+            - "error"
+        errorMessage:
+          type: string
+        errorData:
+          type: object
+        value: {}
+
+    FailedResponse:
+      type: object
+      properties: {}

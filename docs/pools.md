@@ -137,7 +137,11 @@ route does not exist.
 
 The HTTP routes are operator-gated (they name provisioned numbers and rate
 state), and the CLI and MCP reach them through the shared
-`createBlasterApiClient`, so the three cannot disagree about a payload.
+`createBlasterApiClient`, so the three cannot disagree about a payload. The
+same routes are also registered on the Convex deployment's own HTTP router
+(`convex/http/`), so a site with no Hono in front still answers them; the
+OpenAPI spec at `openapi.yaml` (regenerate with `pnpm openapi`) describes the
+Convex surface.
 
 ## Building a pool interactively
 
