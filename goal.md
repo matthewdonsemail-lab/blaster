@@ -1,7 +1,7 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-02T01:56:43Z
+updated: 2026-10-02T02:19:22Z
 commit: inbox: one row per person in the pool view
 -->
 
@@ -147,4 +147,5 @@ the per-number or account ceiling.
 - [x] Convex codegen, not hand-edited `_generated`: `scripts/convex-codegen.mjs` regenerates `api.d.ts`/`server.d.ts` from the local tree (no deployment login needed); `check:generated` keeps them current; `check:convex` exempts the `convex/http/` router from R8 with a documented note
 - [x] Operator routes mirrored on the Convex HTTP router: `convex/http/` registers pools, sequences, suppressions, and conversations routes so a site with no Hono in front still answers them; `check:surfaces` now verifies the mirror and rejects drift in both directions
 - [x] OpenAPI spec at `openapi.yaml` generated from the deployment by the official `convex-helpers open-api-spec` CLI (`pnpm openapi` to refresh); documents the Convex function surface including internal actions
+- [ ] Authored docs aligned to current state: docs/sequencer.md delivery step, docs/architecture.md gates table, docs/README.md authored index, docs/deployment.md rewritten for Railcode
 - [ ] Open the PR and get the pool branch merged to `main` (ticket 05)

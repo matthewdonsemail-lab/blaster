@@ -33,10 +33,12 @@ The three blockers named below have been closed on `jilly-pool-domain`:
    `runDueEnrollments` with a batch of 25; `docs/pools.md` and
    `goal.md` track the state.
 
-What remains open is the *delivery* step: this branch has not been merged, and
-nothing has been observed sending against a live deployment. The test harness in
-`convex/test/` proves the Convex layer; the last mile is `pnpm convex:deploy`
-and watching the cron fire.
+## What remains open: deployment
+
+The branch has been merged to `main` (PR #2, `9b70ac3`). What is not yet done is
+the live-deployment step: `pnpm convex:deploy`, watching the one-minute cron fire,
+and `pnpm openapi` against the prod deployment to regenerate the spec. The test
+harness in `convex/test/` proves the Convex layer; that is the last gap.
 
 ## A reply stops the sequence, and tells a human
 
@@ -192,16 +194,9 @@ Each step is independently shippable, and each is small.
     writes the durable per-peer `suppressions` row in the same transaction, so a
     later enrollment from another number or sequence is refused at enroll and at
     send.
- 5. ~~**Enrol over `agencyProspects`**~~ **Done.** `enrollRecipients` walks
-    `agencyProspects` with the send filter DSL and mirrors `outboundState` back,
-    exposed on all three surfaces.
-
-Step 3 needs a decision this page does not make: **where the send runs.** Convex
-has no Telnyx component mounted — the note in `convex.config.ts` records that the
-private packages were removed — so either the action calls Telnyx's REST API
-itself, or it calls the Hono API's existing `sendMessage` and reuses its verified
-path and error handling. The second is smaller and reuses code that is already
-running in production; the first keeps Convex self-contained.
+  5. ~~**Enrol over `agencyProspects`**~~ **Done.** `enrollRecipients` walks
+     `agencyProspects` with the send filter DSL and mirrors `outboundState` back,
+     exposed on all three surfaces.
 
 ## Not legal advice
 

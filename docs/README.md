@@ -12,11 +12,14 @@ naming gates:
 | [deployment.md](deployment.md) | How pushes become production: the build, the tracked function shim, failure modes, and rollback |
 | [send.md](send.md) | The prospect batch send: the intent, the four routes, the filter menu, and the per-recipient response shape |
 | [sequencer.md](sequencer.md) | The multi-step SMS sequencer: what works, the exact gaps, and the design decisions |
-| [pools.md](pools.md) | Number pools: the relation, the rate limits, the status fields, and the surfaces that manage them |
+| [pools.md](pools.md) | Number pools: the relation, the rate limits, the status fields, the surfaces, the person-level inbox fold, and durable per-peer suppression |
 | [call-history.md](call-history.md) | How call recordings and transcripts reach the workspace |
 | [member-attribution.md](member-attribution.md) | How a write is attributed to the signed-in member |
 | [naming-conventions.md](naming-conventions.md) | The required `{library}/{domainname}/helpers` directory structure |
 | [convex-naming-conventions.md](convex-naming-conventions.md) | The Convex tree's own naming and directory rules |
+| [agents/issue-tracker.md](agents/issue-tracker.md) | How the local-markdown issue tracker and wayfinder maps work in this repo |
+| [agents/triage-labels.md](agents/triage-labels.md) | The five canonical triage roles and their label strings |
+| [agents/domain.md](agents/domain.md) | How engineering skills should consume this repo's domain documentation |
 
 **Vendored** documentation is third-party reference material, pulled in for the
 libraries this repository actually depends on. It is gitignored, so it is never

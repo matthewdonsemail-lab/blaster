@@ -182,16 +182,22 @@ the countries with no messaging profile configured.
 
 | Gate | Enforces |
 | --- | --- |
+| `check:secrets` | no credential is committed |
+| `check:secrets:self-test` | the scanner still separates known-bad from known-good |
+| `check:goal` | `goal.md` is a current outline (updated within 20 min) |
 | `check:naming` | the `{library}/{domainname}/helpers` convention |
 | `check:convex` | the Convex tree's own naming, barrels, and internal-call rules |
-| `check:surfaces` | the CLI capability registry, the MCP tools, and the HTTP routes agree |
+| `check:surfaces` | the CLI capability registry, the MCP tools, the HTTP routes, and README.md all agree |
 | `check:env` | every manifest variable is consumed by a real file |
+| `check:generated` | `convex/_generated/api.d.ts` and `server.d.ts` match the local tree |
 | `check:generated-client` | the committed Twenty GraphQL client is current |
 | `check:twenty-objects` | the Twenty object allowlist is current |
 | `check:no-emoji` | no emoji anywhere in the repository |
 | `check:no-font-mono` | forbids any fixed-width font from rendering |
 | `check:encoding` | no mojibake in tracked text |
-| `test` | the pure logic, with no credentials |
+| `typecheck` | all four packages, strict |
+| `lint` | Convex lint (after typecheck, since two rules need type information) |
+| `test` | the pure logic plus the `convex/test` integration harness |
 
 `twenty:client:check` is separate from that list because it needs either
 instance credentials or a saved schema: it regenerates the Twenty client and
