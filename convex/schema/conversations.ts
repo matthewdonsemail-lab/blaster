@@ -31,9 +31,21 @@ export const conversationTables = {
     messageCount: v.optional(v.number()),
     /** Telnyx message id of the newest message, for jumping straight to it. */
     latestMessageId: v.optional(v.string()),
+    /**
+     * Twenty record ids this thread belongs to. The pairKey stays the identity;
+     * these are pointers, set once by `linkConversation` and never used to
+     * resolve a thread, so a number change cannot orphan the history.
+     * `prospectId` is the agencyProspect that was contacted; `leadId` is the
+     * agencyLead it was promoted to. Promotion adds `leadId` to the same row
+     * rather than opening a new conversation.
+     */
+    prospectId: v.optional(v.string()),
+    leadId: v.optional(v.string()),
     createdAt: v.number(),
   })
     .index("pairKey", ["pairKey"])
+    .index("prospectId", ["prospectId"])
+    .index("leadId", ["leadId"])
     .index("latestMessageAt", ["latestMessageAt"])
     .index("phoneNumber", ["phoneNumber"])
     // The inbox is organised by the number we sent from, not by the peer, so

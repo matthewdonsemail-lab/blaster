@@ -1,4 +1,4 @@
-import type { MutationCtx } from "../_generated/server.js";
+import type { MutationCtx, QueryCtx } from "../_generated/server.js";
 import type { Doc } from "../_generated/dataModel.js";
 import {
   DEFAULT_OPTIONS,
@@ -186,4 +186,24 @@ export async function applySentOutcome(
  */
 async function storeOutboundMessage(ctx: MutationCtx, message: SentMessage): Promise<void> {
   await recordOutboundRow(ctx, message);
+}
+
+/**
+ * The Twenty prospect a peer number belongs to, from their enrollments.
+ *
+ * `recipientId` is the agencyProspect id. Any status counts, because a reply
+ * to a sequence that already stopped is still a reply from that prospect. Null
+ * when the peer was never enrolled or is enrolled under more than one prospect:
+ * guessing would bind a thread to the wrong record, and a link is write-once.
+ */
+export async function prospectForPeer(ctx: QueryCtx, peerNumber: string): Promise<string | null> {
+  if (!peerNumber) return null;
+  // One contact's enrollments, same bound as stopEnrollmentsForPeer.
+  // eslint-disable-next-line @convex-dev/no-collect-in-query
+  const enrollments = await ctx.db
+    .query("sequenceEnrollments")
+    .withIndex("to", (q) => q.eq("to", peerNumber))
+    .collect();
+  const ids = new Set(enrollments.map((row) => row.recipientId));
+  return ids.size === 1 ? ([...ids][0] ?? null) : null;
 }

@@ -12,6 +12,7 @@ export * from "./bark/index.ts";
 export * from "./twenty/client/index.ts";
 export * from "./twenty/actor/index.ts";
 export * from "./twenty/agencyCall/index.ts";
+export * from "./twenty/agencyLead/index.ts";
 export * from "./twenty/agencyPhone/index.ts";
 export * from "./twenty/agencyProspect/index.ts";
 export * from "./twenty/objectService/index.ts";
