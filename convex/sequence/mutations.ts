@@ -212,6 +212,10 @@ export const recordStep = internalMutation({
     outcome: stepOutcomeValidator,
     /** Why a send was skipped or failed, so an operator can see the reason. */
     skipReason: v.optional(v.string()),
+    /** Telnyx error code of a rejected send. */
+    errorCode: v.optional(v.string()),
+    /** On a failed send, false means retrying cannot help. Absent keeps the old retry behaviour. */
+    retryable: v.optional(v.boolean()),
     steps: v.array(stepFieldsValidator),
     /**
      * What the provider confirmed, present only when the send is known to have
@@ -241,7 +245,9 @@ export const recordStep = internalMutation({
       // considers retryable. The counter is persisted because an in-memory one
       // would reset every tick and retry forever.
       const attempts = (enrollment.attempts ?? 0) + 1;
-      const exhausted = attempts >= MAX_STEP_ATTEMPTS;
+      // A permanent rejection (bad number, unregistered, filtered) fails the same
+      // way every time, so retrying it only spends attempts and carrier calls.
+      const exhausted = args.retryable === false || attempts >= MAX_STEP_ATTEMPTS;
       const lastBackoff = RETRY_BACKOFF_MS.length - 1;
       const backoff =
         RETRY_BACKOFF_MS[Math.min(attempts - 1, lastBackoff)] ??
@@ -252,6 +258,7 @@ export const recordStep = internalMutation({
         status: exhausted ? "failed" : "active",
         nextDueAt: exhausted ? undefined : Date.now() + backoff,
         lastSkipReason: args.skipReason ?? "send-failed",
+        lastErrorCode: args.errorCode,
       });
       return { status: exhausted ? ("failed" as const) : ("active" as const), attempts };
     }

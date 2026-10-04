@@ -371,7 +371,12 @@ export const runEnrollmentStep = internalAction({
       // else never learned the outcome at all. Only the first may be "failed".
       outcome =
         error instanceof TelnyxError
-          ? classifySendResult({ ok: false, status: error.status, detail: error.message })
+          ? classifySendResult({
+              ok: false,
+              status: error.status,
+              detail: error.message,
+              errorCode: error.code,
+            })
           : classifySendError(error);
     }
 
@@ -397,6 +402,8 @@ export const runEnrollmentStep = internalAction({
         outcome: "failed",
         steps,
         skipReason: outcome.reason,
+        retryable: outcome.retryable,
+        errorCode: outcome.errorCode,
       });
       return { kind: "failed", retryable: outcome.retryable, reason: outcome.reason };
     }
