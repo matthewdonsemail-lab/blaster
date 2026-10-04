@@ -35,6 +35,7 @@ export function checkDocReadiness(
     assignmentStatus: doc.assignmentStatus,
     carrierProvisioningStatus: doc.carrierProvisioningStatus,
     tollFreeVerification: doc.tollFreeVerification,
+    allowUnregistered: Boolean(doc.allowUnregistered),
     complianceCheckedAt: doc.complianceCheckedAt,
     now,
   });

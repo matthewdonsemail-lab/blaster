@@ -38,6 +38,7 @@ export const phoneInput = v.object({
   assignmentStatus: v.optional(v.string()),
   carrierProvisioningStatus: v.optional(v.string()),
   tollFreeVerification: v.optional(v.string()),
+  allowUnregistered: v.optional(v.object({ reason: v.string(), setAt: v.number() })),
   complianceCheckedAt: v.optional(v.number()),
   complianceSource: v.optional(v.string()),
 });
@@ -68,6 +69,7 @@ export type PhoneInput = {
   assignmentStatus?: string;
   carrierProvisioningStatus?: string;
   tollFreeVerification?: string;
+  allowUnregistered?: { reason: string; setAt: number };
   complianceCheckedAt?: number;
   complianceSource?: string;
 };

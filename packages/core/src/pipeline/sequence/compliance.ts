@@ -46,6 +46,11 @@ export interface CheckSenderReadinessInput {
   carrierProvisioningStatus?: string | null;
   /** `unverified` | `pending` | `verified`; missing is treated as unverified. */
   tollFreeVerification?: string | null;
+  /**
+   * The operator accepted the carrier risk for this number. Skips the registration
+   * and verification checks only; the messaging profile is still required.
+   */
+  allowUnregistered?: boolean;
   complianceCheckedAt?: number | null;
   now: number;
   maxSnapshotAgeMs?: number;
@@ -92,6 +97,9 @@ export function checkSenderReadiness(input: CheckSenderReadinessInput): SenderRe
       detail: "Number has no messaging profile bound",
     };
   }
+
+  // Operator override: registration and verification are not checked.
+  if (input.allowUnregistered) return { ready: true };
 
   // 2. Toll-free: unverified numbers are filtered by carriers (~0.25 msg/s, then queue
   // expiry), so only pending or verified numbers may send. Missing means unverified.

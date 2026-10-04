@@ -45,6 +45,12 @@ export const phoneTables = {
     assignmentStatus: v.optional(v.string()),
     carrierProvisioningStatus: v.optional(v.string()),
     tollFreeVerification: v.optional(v.string()),
+    /**
+     * Operator opt-in to send from this number without carrier registration. Set per
+     * number, with a reason and time, never by default. The number may be filtered
+     * or blocked by carriers; that risk is the operator's to accept.
+     */
+    allowUnregistered: v.optional(v.object({ reason: v.string(), setAt: v.number() })),
     complianceCheckedAt: v.optional(v.number()),
     complianceSource: v.optional(v.string()),
   })
