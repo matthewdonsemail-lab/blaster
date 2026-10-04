@@ -1,5 +1,5 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server.js";
-import type { Doc } from "../_generated/dataModel.js";
+import type { Doc, Id } from "../_generated/dataModel.js";
 import {
   DEFAULT_OPTIONS,
   advance,
@@ -161,7 +161,14 @@ export async function applySentOutcome(
     lastSkipReason: undefined,
   });
   if (message) {
-    await storeOutboundMessage(ctx, message);
+    // Attribution comes from the enrollment as it was before the cursor moved,
+    // so the stamped step is the one that was actually sent.
+    await storeOutboundMessage(ctx, {
+      ...message,
+      sequenceId: enrollment.sequenceId,
+      enrollmentId: enrollment._id,
+      stepIndex: enrollment.cursor,
+    });
   }
   // Core types the resulting status as the whole `EnrollmentStatus` union, but a
   // send that went out only ever leaves the enrollment active (steps still owed)
@@ -184,7 +191,14 @@ export async function applySentOutcome(
  * calls into sequence/model.ts from the other direction. Static import is
  * safe: neither model file imports the other at module scope in a cycle.
  */
-async function storeOutboundMessage(ctx: MutationCtx, message: SentMessage): Promise<void> {
+async function storeOutboundMessage(
+  ctx: MutationCtx,
+  message: SentMessage & {
+    sequenceId: Id<"sequences">;
+    enrollmentId: Id<"sequenceEnrollments">;
+    stepIndex: number;
+  },
+): Promise<void> {
   await recordOutboundRow(ctx, message);
 }
 
