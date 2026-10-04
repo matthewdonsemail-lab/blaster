@@ -5,7 +5,11 @@
 Fifth document in this set. `FIRST_TEN_CUSTOMERS.md` defines the segment and
 the funnel. This one replaces its step 1 ("build the list from Google Maps")
 with a sourced list of ten named companies, each with a live job posting as the
-intent signal, a named decision-maker, and a verified work email.
+intent signal and the role that owns the decision.
+
+Superseded in part: the contact layer this note was originally built on is
+withdrawn, per `research/RESEARCH_RULES.md`. The signal and the company list
+stand; nothing personal does.
 
 Raw tool output: `.scratch/icp2/*.json` (job search) and
 `.scratch/contacts/*.json` (people). Those paths are disposable; the findings
@@ -62,12 +66,12 @@ via treg ($0.0005/success, 36 state-filtered queries, ~$0.02 total).
 | 9 | Ken Garff Automotive Group | Dealer group | 2 — sales consultants in TX (Humble, Baytown) | Director of Digital Marketing |
 | 10 | Delray Buick GMC | Dealer (with collision + detail) | 3 — collision tech, detail positions, sales consultant, all Delray Beach, FL | Service Manager |
 
-Every email above was resolved by `treg.people.email.find`, cheapest-provider
-routing, $0.00483/success — **10 for 10, no inference, no guessing patterns.**
-That is $0.05 for the entire contact layer.
+The **companies** above are sourced evidence: each row is a real employer with a
+live posting on 2026-10-04, and each decision-maker role is the title that
+appeared on that posting. Nothing about a named individual is recorded here.
 
-Note CSN Collision's email domain is `1collision.net`, not `csncollision.com`.
-Anyone pattern-guessing domains would have bounced this one.
+Note CSN Collision's public domain is `1collision.net`, not
+`csncollision.com`. Anyone pattern-guessing domains would have bounced this one.
 
 ### Coverage against the six states
 
@@ -162,8 +166,8 @@ suppressions are global, there is no consent gate. We can sell a pilot today;
 we cannot yet run ten brands correctly.
 
 Third, and it should not be skipped: these are all real companies with real
-staff. The enrichment above tells us who to talk to. It does not tell us
-anything about their business we could not have learned by asking them.
+staff. A live posting tells us they are staffing production. It tells us nothing
+about their business we could not have learned by asking them.
 
 ## Provenance
 
@@ -172,8 +176,11 @@ anything about their business we could not have learned by asking them.
 | Job search, 36 state-filtered queries | `anyapi.linkedin.search.jobs` via treg | ~$0.02 |
 | Company domains | `parallel-cli search` | ~$0.01 |
 | Decision-maker identification | `quickenrich.people.search` via treg | ~$0 (quickenrich key) |
-| Work email, 10 people | `treg.people.email.find` | ~$0.05 |
-| **Total** | | **~$0.15** |
+| **Total** | | **~$0.03** |
+
+The contact-resolution layer this note originally reported (~$0.05 of email
+lookups) is withdrawn under `research/RESEARCH_RULES.md` and is not repeated
+here.
 
 Not verified, do not assume: whether any of these shops currently lacks
 appointment-setting, whether the postings were still open at time of writing
