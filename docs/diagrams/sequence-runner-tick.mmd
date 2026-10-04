@@ -23,7 +23,7 @@
 %% fact: cron-limit 25
 %% fact: cron-comment-seconds 15
 %% fact: machine-evaluating-order senderNotReady>recipientUnplaceable>pastLastStep>reachedStopStep>notEligible>withinQuietHours
-%% fact: runner-gate-order dryRunEnrollment({>telnyxAccounts.queries.usability,>resolveAccountKey(convexEnv>skipReason: "no-number">mutations.consumeSender>mutations.claimSendCapacity>mutations.claimStep>sendMessage({
+%% fact: runner-gate-order dryRunEnrollment({>telnyxAccounts.queries.usability,>resolveAccountKey(convexEnv>if (!to) {>mutations.consumeSender>mutations.claimSendCapacity>mutations.claimStep>sendMessage({
 %% fact: runner-capacity-args fromNumber,campaignId
 %% edge-chain: CRON>ACTION>IDS>ONE / CTX>GUARD>CURSOR>NUMBER>READY>MACHINE>SENDERR>UNPLACE>PAST>ELIG>QUIET>CAP>ACCOUNT>KEY>TONUMBER>POOLRES>CAP>CAPOK>STEP>STEPOK>RECHECK>LIVE>SEND>OUTCOME>RECORD
 flowchart TD

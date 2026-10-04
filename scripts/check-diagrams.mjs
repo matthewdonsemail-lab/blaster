@@ -89,13 +89,18 @@ function countMatches(source, pattern) {
 // ---------------------------------------------------------------------------
 
 /**
- * Line and block comments removed, newlines preserved so positions still mean
- * "line N of the file".
+ * Comments and string-literal contents removed, newlines preserved so positions
+ * still mean "line N of the file".
  *
- * Without this, a comment that happens to mention `sendMessage` before the real
- * call site would move `runner-gate-order` and the fact would either fail on a
- * rename or, worse, agree with a diagram that is wrong. Strings are kept, because
- * two of the ordering markers are string literals (`"no-number"`).
+ * Both have to go. A comment mentioning `sendMessage` before the real call site
+ * would move `runner-gate-order`; so would a string literal containing two
+ * markers, which is exactly what a mutation pass managed to do - a top-of-file
+ * `const note = "mutations.claimStep mutations.consumeSender"` reordered the
+ * chain while the real code stayed put. With both stripped, every ordering
+ * marker has to be real code, which is what makes the fact mean anything.
+ *
+ * The consequence is that a marker may not be a string literal. The `no-number`
+ * gate is pinned with `if (!to) {` rather than with the reason it writes.
  */
 export function stripComments(source) {
   return source
@@ -103,17 +108,28 @@ export function stripComments(source) {
     .replace(/(^|[^:"'`\\])\/\/[^\n]*/g, (m) => m.replace(/[^\n]/g, " "));
 }
 
+export function stripLiterals(source) {
+  return source.replace(/(["'`])((?:\\[\s\S]|(?!\1)[\s\S])*)\1/g, (m) =>
+    m.replace(/[^\n]/g, " "),
+  );
+}
+
+/** Comments and string contents both blanked: only real code remains. */
+export function stripNonCode(source) {
+  return stripLiterals(stripComments(source));
+}
+
 /**
  * The order in which `markers` first appear in `source`, joined with `>`.
  *
  * This is what turns a diagram's arrows into something the gate can check. A
  * count cannot tell you that capacity is claimed before the step; the position
- * of two tokens in a file can. Comments are stripped first, so a comment
- * mentioning a marker cannot move it. Returns null when a marker is missing, so
- * a rename surfaces as a failing fact rather than as a silently shorter string.
+ * of two tokens in a file can. Comments and string literals are stripped first,
+ * so neither can move a marker. Returns null when a marker is missing, so a
+ * rename surfaces as a failing fact rather than as a silently shorter string.
  */
 export function orderOf(rawSource, markers) {
-  const source = stripComments(rawSource);
+  const source = stripNonCode(rawSource);
   const seen = [];
   let at = -1;
   for (const marker of markers) {
@@ -243,7 +259,7 @@ export function facts(rootDir = root, report = () => {}) {
         "dryRunEnrollment({",
         "telnyxAccounts.queries.usability,",
         "resolveAccountKey(convexEnv",
-        'skipReason: "no-number"',
+        "if (!to) {",
         "mutations.consumeSender",
         "mutations.claimSendCapacity",
         "mutations.claimStep",
@@ -252,7 +268,7 @@ export function facts(rootDir = root, report = () => {}) {
     ),
     "runner-capacity-args": capacityArgs.join(","),
     "inbound-stop-order": String(
-      orderOf(inbound, ["args.providerEventId", 'insert("messages"', "stopEnrollmentsForPeer"]),
+      orderOf(inbound, ["args.providerEventId", "ctx.db.insert(", "stopEnrollmentsForPeer("]),
     ),
     "profile-reasons": profileReasons.join(","),
     "notification-rules": String(countMatches(breakdown, /id:\s*"/g)),
@@ -281,8 +297,26 @@ export function facts(rootDir = root, report = () => {}) {
  */
 export function assertedFacts(source) {
   const out = [];
-  for (const m of source.matchAll(/^\s*(?:%{2}|\/\/)\s*fact:\s*(\S+)\s+(\S+)\s*$/gm)) {
+  for (const m of source.matchAll(/^\s*(?:%{2}|\/\/)\s*fact:\s*(\S+)[ \t]+(\S.*?)\s*$/gm)) {
     out.push({ name: m[1], value: m[2] });
+  }
+  return out;
+}
+
+/**
+ * `fact:` lines that `assertedFacts` could not parse.
+ *
+ * A line that names a fact but fails the value pattern used to be dropped, which
+ * is how `runner-gate-order` stayed unchecked: its value held a space and the
+ * old `(\S+)` never matched. An unparsed fact is a fact nobody checks, so it is
+ * a violation rather than a skip.
+ */
+export function malformedFacts(source) {
+  const parsed = new Set(assertedFacts(source).map((f) => `${f.name} ${f.value}`));
+  const out = [];
+  for (const m of source.matchAll(/^\s*(?:%{2}|\/\/)\s*fact:(.*)$/gm)) {
+    const [name, ...rest] = m[1].trim().split(/\s+/);
+    if (!name || !parsed.has(`${name} ${rest.join(" ")}`.trim())) out.push(m[0].trim());
   }
   return out;
 }
@@ -497,6 +531,12 @@ export async function run(options = {}) {
     }
   }
 
+  for (const { label, source } of sources) {
+    for (const line of malformedFacts(source)) {
+      reportFail(`${label}: fact annotation could not be parsed, so it is not being checked: ${line}`);
+    }
+  }
+
   // Drawn arrows, checked against what the diagram claims to draw.
   for (const { label, source } of sources) {
     for (const chain of assertedEdgeChains(source)) {
@@ -543,6 +583,9 @@ function tempTree(name, diagram) {
   writeFileSync(join(dir, "README.md"), `# Diagrams\n\n[${name}](${name})\n`);
   return base;
 }
+
+/** Facts deliberately derived without a diagram asserting them. Keep empty if possible. */
+const UNASSERTED_ON_PURPOSE = [];
 
 /** Only the violations about one fact, so an unrelated failure cannot pass for one. */
 const complaintsAbout = (violations, fact) =>
@@ -685,6 +728,38 @@ export async function selfTest() {
     );
   } else {
     notes.push(`self-test: ${annotated.length} of ${realDiagrams.length} diagrams carry fact annotations.`);
+  }
+
+  // An annotation the reader cannot parse must fail loudly, not vanish.
+  const malformedTree = tempTree(
+    "malformed.mmd",
+    '%% fact: schema-tables\nflowchart TD\n  A["a"] --> B["b"]\n',
+  );
+  const malformedRun = await run({ rootDir: malformedTree });
+  if (complaintsAbout(malformedRun.violations, "could not be parsed").length === 0) {
+    report("self-test: run() ignored a fact annotation it could not parse.");
+  } else {
+    notes.push("self-test: run() rejects an unparseable fact annotation.");
+  }
+  const spaced = assertedFacts('%% fact: spaced a "b" c>d\n');
+  if (spaced.length !== 1 || spaced[0].value !== 'a "b" c>d') {
+    report("self-test: a fact value containing spaces was not read back whole.");
+  } else {
+    notes.push("self-test: fact values may contain spaces.");
+  }
+
+  // Coverage: every fact facts() derives must be asserted by some real diagram,
+  // or be listed in UNASSERTED_ON_PURPOSE. A fact nobody asserts is decoration,
+  // which is how the dead `%%` regex went unnoticed.
+  const unasserted = new Set(Object.keys(derived));
+  for (const f of realDiagrams) {
+    for (const { name } of assertedFacts(read(f))) unasserted.delete(name);
+  }
+  for (const name of UNASSERTED_ON_PURPOSE) unasserted.delete(name);
+  if (unasserted.size > 0) {
+    report(`self-test: facts derived but asserted by no diagram: ${[...unasserted].join(", ")}.`);
+  } else {
+    notes.push("self-test: every derived fact is asserted by a diagram.");
   }
 
   return { violations, notes, derived };
