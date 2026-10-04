@@ -159,7 +159,7 @@ const CAPABILITIES = [
   { id: "sequences.validate", cli: "blaster sequence validate", mcp: "blaster_validate_sequence", http: "POST /api/sequences/validate" },
   { id: "sequences.preview", cli: "blaster sequence preview", mcp: "blaster_preview_sequence", http: "POST /api/sequences/preview" },
   { id: "sequences.drafts.list", cli: "blaster sequence drafts", mcp: "blaster_list_sequence_drafts", http: "GET /api/sequence-drafts" },
-  { id: "sequences.drafts.get", cli: "blaster sequence show", mcp: "blaster_get_sequence_draft", http: "GET /api/sequence-drafts/:id" },
+  { id: "sequences.drafts.get", cli: "", mcp: "blaster_get_sequence_draft", http: "GET /api/sequence-drafts/:id" },
   { id: "sequences.drafts.save", cli: "blaster sequence save-draft", mcp: "blaster_save_sequence_draft", http: "POST /api/sequence-drafts" },
   { id: "sequences.drafts.discard", cli: "blaster sequence discard-draft", mcp: "blaster_discard_sequence_draft", http: "DELETE /api/sequence-drafts/:id" },
   { id: "sequences.drafts.commit", cli: "blaster sequence commit-draft", mcp: "blaster_commit_sequence_draft", http: "POST /api/sequence-drafts/:id/commit" },

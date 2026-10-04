@@ -705,7 +705,8 @@ pools.put("/pools/:id/numbers", requireOperator, async (c) => {
  *
  * Read-only and operator-gated like the rest of this sub-app. The runner and the
  * sequence builder read sequences directly from Convex; this route exists only
- * so the CLI and MCP can list them through the shared client.
+ * so the CLI can list them through the shared client. MCP has no read tool for
+ * committed sequences; the registry omits it from `sequences.list` and `sequences.get`.
  */
 pools.get("/sequences", requireOperator, async (c) => {
   const result = await listSequences();
