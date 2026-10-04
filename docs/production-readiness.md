@@ -29,7 +29,7 @@ Rules that must be enforced before a send, not discovered after:
 | Rule | Today |
 | --- | --- |
 | Number registered for the traffic (10DLC campaign, or toll-free verified), unless an operator override with a reason is set | `proven` (gate, #6, #14) |
-| Sender and recipient in the same state / area-code region: a number owned in Philadelphia does not text Chicago | `open`. Recipient state derivation exists (`lookupAreaCodeState`); sender state and the match rule do not. |
+| Sender and recipient in the same state / area-code region: a number owned in Philadelphia does not text Chicago | `built`: `checkStateMatch` (core), pool selection filters by recipient state, fixed/pinned senders park as `state-mismatch`; per-number `stateCode` override. Hard block, no fallback (pending Matt). Tests: `state-match.test.ts`, `state-routing.test.ts`. Not yet proven on a live send. |
 | Quiet hours in the recipient's time zone | `proven` live on dev (send deferred overnight) |
 | Suppression (STOP) across all numbers | `proven` (tests) |
 | Messaging profile bound for the country | `proven` (#15) |

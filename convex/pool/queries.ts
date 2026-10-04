@@ -50,9 +50,9 @@ export const listPoolNumbers = query({
  * defer. The budget is spent by `consumeSender` at send time, not here.
  */
 export const availableSender = internalQuery({
-  args: { poolId: v.id("pools"), now: v.optional(v.number()) },
+  args: { poolId: v.id("pools"), now: v.optional(v.number()), to: v.optional(v.string()) },
   handler: async (ctx, args) => {
     const now = args.now ?? Date.now();
-    return readAvailableSender(ctx, args.poolId, now);
+    return readAvailableSender(ctx, args.poolId, now, args.to);
   },
 });

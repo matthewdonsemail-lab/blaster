@@ -12,6 +12,8 @@
  * required, but not 10DLC campaign registration).
  */
 
+import { lookupAreaCodeState } from "../../telnyx/messaging/helpers/phone-derived-state.ts";
+
 export const DEFAULT_MAX_COMPLIANCE_SNAPSHOT_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 export type SenderReadinessReason =
@@ -23,6 +25,7 @@ export type SenderReadinessReason =
   | "snapshot-stale"
   | "tollfree-unverified"
   | "account-unavailable"
+  | "state-mismatch"
   | "unsupported-jurisdiction";
 
 export type SenderReadiness =
@@ -78,6 +81,32 @@ export function requires10DlcRegistration(input: {
   const isTollFreeOrShort = type === "toll_free" || type === "short_code" || type === "tollfree";
 
   return isUs && !isTollFreeOrShort;
+}
+
+export type StateMatch =
+  | { applies: false }
+  | { applies: true; match: boolean; senderState: string; recipientState: string };
+
+/**
+ * The same-state rule: a number owned in one state does not text a recipient in
+ * another (a Philadelphia number does not text Chicago).
+ *
+ * The state comes from the area code, or from `senderState` when the number's
+ * owner recorded one (a ported or relocated number whose area code lies). The
+ * rule only applies when both states are known: toll-free numbers, non-US
+ * numbers and area codes the table cannot place have no state, and are left to
+ * the other gates rather than blocked on a guess.
+ */
+export function checkStateMatch(input: {
+  senderPhone: string;
+  senderState?: string | null;
+  recipientPhone: string | null | undefined;
+  recipientState?: string | null;
+}): StateMatch {
+  const senderState = (input.senderState ?? lookupAreaCodeState(input.senderPhone) ?? "").toUpperCase();
+  const recipientState = (input.recipientState ?? lookupAreaCodeState(input.recipientPhone) ?? "").toUpperCase();
+  if (!senderState || !recipientState) return { applies: false };
+  return { applies: true, match: senderState === recipientState, senderState, recipientState };
 }
 
 /** True for numbers whose type marks them toll-free. */

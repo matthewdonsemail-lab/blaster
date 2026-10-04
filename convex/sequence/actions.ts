@@ -2,6 +2,7 @@
 
 import { v } from "convex/values";
 import { resolveAccountKey } from "../telnyxAccounts/model.js";
+import { checkStateMatch } from "../../packages/core/src/pipeline/sequence/compliance.js";
 import { checkDocReadiness } from "../phoneNumbers/compliance.js";
 // Aliased: `profileEnv` below builds the Telnyx SDK's own env record and this
 // handler holds it in a local `env`, which would otherwise shadow the Convex
@@ -110,14 +111,26 @@ export const runEnrollmentStep = internalAction({
         const docReadiness = checkDocReadiness(phoneDoc, now);
         if (!docReadiness.ready) {
           senderReadiness = { ready: false, reason: docReadiness.reason };
+        } else if (stateMismatch(fromNumber, phoneDoc.stateCode, enrollment.to)) {
+          senderReadiness = { ready: false, reason: "state-mismatch" };
         }
       }
     } else if (sequence.poolId) {
       const availability = await ctx.runQuery(internal.pool.queries.availableSender, {
         poolId: sequence.poolId as Id<"pools">,
         now,
+        ...(enrollment.to ? { to: enrollment.to } : {}),
       });
       if (!availability.sender) {
+        if (availability.blockedReason === "no-state-matching-sender") {
+          await ctx.runMutation(internal.sequence.mutations.applySchedule, {
+            enrollmentId: enrollment._id,
+            status: "awaiting-human",
+            lastSkipReason: "pool-no-state-matching-sender",
+            attempts: enrollment.attempts ?? 0,
+          });
+          return { kind: "sentinel", reason: "pool-no-state-matching-sender" };
+        }
         if (availability.blockedReason === "no-compliant-sender") {
           await ctx.runMutation(internal.sequence.mutations.applySchedule, {
             enrollmentId: enrollment._id,
@@ -163,6 +176,8 @@ export const runEnrollmentStep = internalAction({
         const docReadiness = checkDocReadiness(phoneDoc, now);
         if (!docReadiness.ready) {
           senderReadiness = { ready: false, reason: docReadiness.reason };
+        } else if (stateMismatch(fromNumber, phoneDoc.stateCode, enrollment.to)) {
+          senderReadiness = { ready: false, reason: "state-mismatch" };
         }
       }
     }
@@ -483,6 +498,13 @@ export const runDueEnrollments = internalAction({
 });
 
 /** The two Twenty credentials the enroll seam needs, read from the deployment. */
+/** True when the same-state rule forbids this sender texting this recipient. */
+function stateMismatch(from: string, senderState: string | undefined, to: string | undefined): boolean {
+  if (!to) return false;
+  const result = checkStateMatch({ senderPhone: from, senderState, recipientPhone: to });
+  return result.applies && !result.match;
+}
+
 function twentyEnv(): { baseUrl: string; apiKey: string } | null {
   const baseUrl = convexEnv.TWENTY_BASE_URL;
   const apiKey = convexEnv.TWENTY_API_KEY;

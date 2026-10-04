@@ -60,6 +60,8 @@ export const phoneTables = {
     tollFreeVerification: v.optional(v.string()),
     /** Owning Telnyx account (`telnyxAccounts.ref`). Absent = the default account. */
     accountRef: v.optional(v.string()),
+    /** USPS state the number is owned in. Overrides the area code when it does not say. */
+    stateCode: v.optional(v.string()),
     /**
      * Operator opt-in to send from this number without carrier registration. Set per
      * number, with a reason and time, never by default. The number may be filtered
