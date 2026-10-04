@@ -136,3 +136,27 @@ describe("formatAgentReply", () => {
     expect(obeysVoice("really??")).toBe(false);
   });
 });
+
+describe("opt-out confidence", () => {
+  test.each(["STOP", "stop", "Stop.", "STOP!!", "STOPALL", "unsubscribe", "CANCEL", "End", "QUIT", "opt out"])(
+    "a bare keyword %s is certain",
+    (text) => {
+      expect(classifyMessageRules(text)).toEqual({ state: "opt_out", confidence: 1 });
+    },
+  );
+
+  test("an opt-out inside a longer message still suppresses, at lower confidence", () => {
+    const result = classifyMessageRules("how much does it cost? actually stop texting me");
+    expect(result.state).toBe("opt_out");
+    expect(result.confidence).toBeLessThan(1);
+  });
+
+  test("a certain opt-out ends the conversation with no further resolution", () => {
+    const out = classifyConversation([
+      { id: "1", role: "agent", text: "hi", sentAt: 1 },
+      { id: "2", role: "prospect", text: "STOP", sentAt: 2 },
+    ]);
+    expect(out.conversationState).toBe("opted_out");
+    expect(out.resolution).toBe("suppress");
+  });
+});
