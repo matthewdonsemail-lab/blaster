@@ -4,6 +4,19 @@ import { v } from "convex/values";
 /** Tables for owned Telnyx phone numbers. */
 export const phoneTables = {
   /**
+   * Telnyx accounts the deployment can send through. Holds the reference and
+   * health only: the API key is a Convex env var named by `accountKeyEnvName`.
+   */
+  telnyxAccounts: defineTable({
+    ref: v.string(),
+    label: v.optional(v.string()),
+    /** `burned` and `disabled` accounts are skipped by pool selection. */
+    status: v.union(v.literal("active"), v.literal("burned"), v.literal("disabled")),
+    note: v.optional(v.string()),
+    updatedAt: v.number(),
+  }).index("ref", ["ref"]),
+
+  /**
    * Owned Telnyx phone numbers: the purchase ledger Twenty cannot represent.
    *
    * Twenty `agencyPhones` is the operator-visible mirror; this table is the
@@ -45,6 +58,8 @@ export const phoneTables = {
     assignmentStatus: v.optional(v.string()),
     carrierProvisioningStatus: v.optional(v.string()),
     tollFreeVerification: v.optional(v.string()),
+    /** Owning Telnyx account (`telnyxAccounts.ref`). Absent = the default account. */
+    accountRef: v.optional(v.string()),
     /**
      * Operator opt-in to send from this number without carrier registration. Set per
      * number, with a reason and time, never by default. The number may be filtered

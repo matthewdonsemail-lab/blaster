@@ -2,6 +2,7 @@ import type { QueryCtx } from "../_generated/server.js";
 import type { Doc, Id } from "../_generated/dataModel.js";
 import { availableAt, selectSender } from "../../packages/core/src/pipeline/pool/index.js";
 import { memberState, nonNegative } from "./utils.js";
+import { accountUsability } from "../telnyxAccounts/model.js";
 import { checkDocReadiness, type SenderReadiness } from "../phoneNumbers/compliance.js";
 
 /**
@@ -60,7 +61,13 @@ export async function senderForRow(
   now: number = Date.now(),
 ): Promise<PoolSender> {
   const number = await ctx.db.get("phoneNumbers", row.phoneNumberId);
-  const readiness = checkDocReadiness(number, now);
+  let readiness = checkDocReadiness(number, now);
+  // A burned or disabled account takes all of its numbers out of selection, so the
+  // pool carries on with numbers under other accounts.
+  if (readiness.ready) {
+    const account = await accountUsability(ctx, number?.accountRef);
+    if (!account.usable) readiness = { ready: false, reason: "account-unavailable", detail: account.reason };
+  }
   return {
     phoneNumber: row.phoneNumber,
     phoneNumberId: row.phoneNumberId,

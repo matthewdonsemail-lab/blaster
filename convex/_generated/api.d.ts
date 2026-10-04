@@ -4,7 +4,7 @@
  *
  * THIS CODE IS AUTOMATICALLY GENERATED.
  *
- * To regenerate, run `npx convex dev`.
+ * To regenerate, run `node scripts/convex-codegen.mjs`.
  * @module
  */
 
@@ -33,6 +33,7 @@ import type * as pool_queries from "../pool/queries.js";
 import type * as pool_types from "../pool/types.js";
 import type * as pool_utils from "../pool/utils.js";
 import type * as rateLimit from "../rateLimit.js";
+import type * as schema from "../schema.js";
 import type * as schema_conversations from "../schema/conversations.js";
 import type * as schema_discovery from "../schema/discovery.js";
 import type * as schema_messaging from "../schema/messaging.js";
@@ -55,7 +56,9 @@ import type * as suppressions_index from "../suppressions/index.js";
 import type * as suppressions_model from "../suppressions/model.js";
 import type * as suppressions_mutations from "../suppressions/mutations.js";
 import type * as suppressions_types from "../suppressions/types.js";
-
+import type * as telnyxAccounts_model from "../telnyxAccounts/model.js";
+import type * as telnyxAccounts_mutations from "../telnyxAccounts/mutations.js";
+import type * as telnyxAccounts_queries from "../telnyxAccounts/queries.js";
 import type {
   ApiFromModules,
   FilterApi,
@@ -68,8 +71,8 @@ declare const fullApi: ApiFromModules<{
   "conversations/model": typeof conversations_model;
   "conversations/mutations": typeof conversations_mutations;
   "conversations/queries": typeof conversations_queries;
-  crons: typeof crons;
-  http: typeof http;
+  "crons": typeof crons;
+  "http": typeof http;
   "http/blaster": typeof http_blaster;
   "http/conversations": typeof http_conversations;
   "http/pool": typeof http_pool;
@@ -87,7 +90,8 @@ declare const fullApi: ApiFromModules<{
   "pool/queries": typeof pool_queries;
   "pool/types": typeof pool_types;
   "pool/utils": typeof pool_utils;
-  rateLimit: typeof rateLimit;
+  "rateLimit": typeof rateLimit;
+  "schema": typeof schema;
   "schema/conversations": typeof schema_conversations;
   "schema/discovery": typeof schema_discovery;
   "schema/messaging": typeof schema_messaging;
@@ -110,6 +114,9 @@ declare const fullApi: ApiFromModules<{
   "suppressions/model": typeof suppressions_model;
   "suppressions/mutations": typeof suppressions_mutations;
   "suppressions/types": typeof suppressions_types;
+  "telnyxAccounts/model": typeof telnyxAccounts_model;
+  "telnyxAccounts/mutations": typeof telnyxAccounts_mutations;
+  "telnyxAccounts/queries": typeof telnyxAccounts_queries;
 }>;
 
 /**
