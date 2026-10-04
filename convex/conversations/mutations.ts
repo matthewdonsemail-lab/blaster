@@ -7,7 +7,7 @@ import {
   peerFromPairKey,
 } from "../../packages/core/src/conversation/history/index";
 import { PREVIEW_LENGTH, resolveConversation } from "./model.js";
-import { stopEnrollmentsForPeer } from "../sequence/model.js";
+import { prospectForPeer, stopEnrollmentsForPeer } from "../sequence/model.js";
 import { suppressPeer } from "../suppressions/model.js";
 
 /**
@@ -132,7 +132,24 @@ export const recordInboundMessage = mutation({
       });
     }
 
-    return { status: "stored" as const, conversationId, messageId, stoppedEnrollments, suppressed };
+    // Bind the thread to its prospect here, in the same transaction, so the
+    // history is findable by CRM record from the first reply onward. Write-once:
+    // an already-linked thread is left alone.
+    const linked = await ctx.db.get("conversations", conversationId);
+    const prospectId = linked?.prospectId ?? (await prospectForPeer(ctx, phoneNumber));
+    if (prospectId && !linked?.prospectId) {
+      await ctx.db.patch("conversations", conversationId, { prospectId });
+    }
+
+    return {
+      status: "stored" as const,
+      conversationId,
+      messageId,
+      stoppedEnrollments,
+      suppressed,
+      prospectId,
+      leadId: linked?.leadId ?? null,
+    };
   },
 });
 
@@ -172,5 +189,38 @@ export const applyOutboundStatus = mutation({
     }
     await ctx.db.patch("messages", message._id, { status: advanced });
     return { status: "applied" as const, messageId: message._id, stored: advanced };
+  },
+});
+
+/**
+ * Attach the Twenty prospect (and, after promotion, the lead) to a thread.
+ *
+ * Idempotent: repeating the same link is a no-op. A thread is bound to one
+ * prospect for life, so a different prospect is refused rather than
+ * overwritten, which is what keeps promotion from forking the history. The
+ * lead may be added later and is likewise write-once.
+ */
+export const linkConversation = mutation({
+  args: {
+    conversationId: v.id("conversations"),
+    prospectId: v.string(),
+    leadId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const row = await ctx.db.get("conversations", args.conversationId);
+    if (!row) return { status: "not-found" as const };
+    if (row.prospectId && row.prospectId !== args.prospectId) {
+      return { status: "conflict" as const, field: "prospectId" as const };
+    }
+    if (args.leadId && row.leadId && row.leadId !== args.leadId) {
+      return { status: "conflict" as const, field: "leadId" as const };
+    }
+    const patch = {
+      ...(row.prospectId ? {} : { prospectId: args.prospectId }),
+      ...(args.leadId && !row.leadId ? { leadId: args.leadId } : {}),
+    };
+    if (Object.keys(patch).length === 0) return { status: "unchanged" as const };
+    await ctx.db.patch("conversations", args.conversationId, patch);
+    return { status: "linked" as const };
   },
 });

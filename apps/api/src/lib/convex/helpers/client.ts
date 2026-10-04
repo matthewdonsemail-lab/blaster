@@ -60,7 +60,16 @@ export interface StoppedEnrollment {
 }
 
 export type InboundRecordResult =
-  | { status: "stored"; conversationId: string; messageId: string; stoppedEnrollments: StoppedEnrollment[] }
+  | {
+      status: "stored";
+      conversationId: string;
+      messageId: string;
+      stoppedEnrollments: StoppedEnrollment[];
+      /** Twenty agencyProspect the thread is bound to, when one could be resolved. */
+      prospectId: string | null;
+      /** Twenty agencyLead already linked to the thread, if the prospect was promoted. */
+      leadId: string | null;
+    }
   | { status: "duplicate"; conversationId: string; messageId: string; stoppedEnrollments: StoppedEnrollment[] }
   | { status: "not-configured" }
   | { status: "failed"; error: string };
@@ -621,4 +630,29 @@ export async function enrollRecipients(input: {
       ...(input.outboundState === undefined ? {} : { outboundState: input.outboundState }),
     });
   });
+}
+
+export type LinkResult =
+  | { status: "linked" | "unchanged" | "not-found" }
+  | { status: "conflict"; field: "prospectId" | "leadId" }
+  | { status: "not-configured" }
+  | { status: "failed"; error: string };
+
+/** Bind a thread to its Twenty prospect, and to the lead once promoted. */
+export async function linkConversation(
+  conversationId: string,
+  prospectId: string,
+  leadId?: string,
+): Promise<LinkResult> {
+  const client = convexClient();
+  if (!client) return { status: "not-configured" };
+  try {
+    return await client.mutation(api.conversations.mutations.linkConversation, {
+      conversationId: conversationId as never,
+      prospectId,
+      ...(leadId ? { leadId } : {}),
+    });
+  } catch (error) {
+    return { status: "failed", error: error instanceof Error ? error.message : String(error) };
+  }
 }
