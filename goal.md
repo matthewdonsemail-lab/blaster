@@ -110,4 +110,5 @@ so a diagram cannot quietly contradict the code.
 - [ ] README reflects only live, relay-contracted CLI and MCP tools; `check:surfaces` enforces it as a pre-push gate
 - [ ] Authored docs aligned to current state: docs/sequencer.md delivery step, docs/architecture.md gates table, docs/README.md authored index, docs/deployment.md rewritten for Railcode
 - [ ] Dual-host plugin tree: `plugins/blaster/` carries both Claude Code (`.claude-plugin/` + `.mcp.json`) and Codex (root `plugin.json` + `mcp.json` + `.agents/plugins/marketplace.json`) from one source; five skills drawn from the as-built docs; vendor pages committed under `docs/plugins/`
+- [x] Everything HTTP can do, MCP can do: six reads/sends and two lookups added as tools (`blaster_list_sequences`, `blaster_get_sequence`, prospect fields/search/preview/send, sending numbers, messaging profiles); `capability-parity.test.ts` fails if an HTTP capability has no MCP tool
 - [x] Registry, CLI capabilities table, MCP tools and HTTP routes are checked against each other by `packages/blaster-cli/test/capability-parity.test.ts`; the table row for `sequences.drafts.get` no longer claims `sequence show`

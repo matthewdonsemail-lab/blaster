@@ -26,6 +26,7 @@ const cliRows = new Map(
 const routes = new Set<string>();
 for (const m of read("../../../apps/api/src/index.ts").matchAll(/\w+\.(get|post|put|patch|delete)\(\s*"([^"]+)"/g)) {
   const path = m[2]!;
+  if (!path.startsWith("/")) continue;
   routes.add(`${m[1]!.toUpperCase()} ${path.startsWith("/api") ? path : `/api${path}`}`);
 }
 
@@ -48,6 +49,27 @@ describe("capability registry matches the surfaces it names", () => {
     expect(row?.cli ?? "").toBe(cli ?? "");
     expect(row?.mcp ?? "").toBe(mcp ?? "");
     expect(row?.http ?? "").toBe(http ?? "");
+  });
+
+  it("lets MCP do everything HTTP can", () => {
+    const httpOnly = CAPABILITY_REGISTRY.filter((c) => c.mappings.http && !c.mappings.mcp).map((c) => c.id);
+    expect(httpOnly, "capabilities reachable over HTTP with no MCP tool").toEqual([]);
+  });
+
+  it("registers every operator route that is mounted", () => {
+    // Not operator actions: liveness, the sign-in handshake, and the provider's
+    // inbound webhook. None of them is something an MCP caller would do.
+    const transportOnly = new Set([
+      "GET /api/health",
+      "GET /api/auth/config",
+      "POST /api/auth/token",
+      "POST /api/auth/refresh",
+      "GET /api/auth/me",
+      "POST /api/webhooks/telnyx",
+    ]);
+    const registered = new Set(CAPABILITY_REGISTRY.map((c) => c.mappings.http?.split("?")[0]));
+    const unregistered = [...routes].filter((r) => !registered.has(r) && !transportOnly.has(r));
+    expect(unregistered, "mounted routes with no registry entry").toEqual([]);
   });
 
   it("advertises no MCP tool the registry does not know", () => {
