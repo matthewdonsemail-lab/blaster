@@ -126,6 +126,27 @@ export const updateComplianceSnapshot = mutation({
   handler: async (ctx, args) => recordComplianceSnapshot(ctx, args),
 });
 
+/**
+ * Opt one number in or out of sending without carrier registration. The reason is
+ * required and stored with the time, so the exception is visible and attributable.
+ * Pass `allow: false` to restore the strict gate.
+ */
+export const setAllowUnregistered = mutation({
+  args: { phoneNumber: v.string(), allow: v.boolean(), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("phoneNumbers")
+      .withIndex("phoneNumber", (q) => q.eq("phoneNumber", args.phoneNumber))
+      .unique();
+    if (!row) throw new Error(`unknown phone number ${args.phoneNumber}`);
+    if (args.allow && !args.reason?.trim()) throw new Error("a reason is required to allow an unregistered sender");
+    await ctx.db.patch("phoneNumbers", row._id, {
+      allowUnregistered: args.allow ? { reason: args.reason!.trim(), setAt: Date.now() } : undefined,
+    });
+    return { phoneNumber: args.phoneNumber, allowUnregistered: args.allow };
+  },
+});
+
 /** Internal version for provider sync actions. */
 export const updateComplianceSnapshotInternal = internalMutation({
   args: complianceSnapshotArgsValidator,

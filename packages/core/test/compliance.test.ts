@@ -146,6 +146,22 @@ describe("checkSenderReadiness", () => {
     }
   });
 
+  it("lets an operator override send an unregistered number, but still needs a profile", () => {
+    const unregistered: CheckSenderReadinessInput = {
+      phoneNumber: "+12724470148",
+      countryCode: "US",
+      numberType: "long_code",
+      messagingProfileId: "prof-1",
+      now,
+    };
+    expect(checkSenderReadiness(unregistered)).toMatchObject({ ready: false, reason: "snapshot-stale" });
+    expect(checkSenderReadiness({ ...unregistered, allowUnregistered: true })).toEqual({ ready: true });
+    expect(
+      checkSenderReadiness({ ...unregistered, allowUnregistered: true, messagingProfileId: "" }),
+    ).toMatchObject({ ready: false, reason: "missing-messaging-profile" });
+    expect(checkSenderReadiness({ ...tollFree, allowUnregistered: true })).toEqual({ ready: true });
+  });
+
   it("still requires a messaging profile for toll-free", () => {
     expect(
       checkSenderReadiness({ ...tollFree, messagingProfileId: "", tollFreeVerification: "verified" }),
