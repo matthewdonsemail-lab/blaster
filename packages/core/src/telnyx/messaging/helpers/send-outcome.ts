@@ -18,7 +18,7 @@
 
 export type SendOutcome =
   | { kind: "sent"; messageId: string }
-  | { kind: "failed"; retryable: boolean; reason: string }
+  | { kind: "failed"; retryable: boolean; reason: string; errorCode?: string }
   | { kind: "ambiguous"; reason: string };
 
 /** A send attempt that completed, successfully or not. */
@@ -28,6 +28,23 @@ export interface SendAttemptResult {
   status: number;
   messageId?: string;
   detail?: string;
+  /** Telnyx error code from the response body, when there was one. */
+  errorCode?: string;
+}
+
+/**
+ * Rejections that mean "too fast", not "wrong". Nothing went out, and the same
+ * message is fine to send again after a pause. Anything else in the 4xx range
+ * (bad number, no registration, content filtered) will fail the same way again.
+ */
+const RATE_LIMIT_STATUS = 429;
+const RATE_LIMIT_ERROR_CODES: ReadonlySet<string> = new Set(["40011"]);
+
+export function isRateLimitRejection(attempt: Pick<SendAttemptResult, "status" | "errorCode">): boolean {
+  return (
+    attempt.status === RATE_LIMIT_STATUS ||
+    (attempt.errorCode !== undefined && RATE_LIMIT_ERROR_CODES.has(attempt.errorCode))
+  );
 }
 
 /**
@@ -44,8 +61,9 @@ export function classifySendResult(attempt: SendAttemptResult): SendOutcome {
   if (attempt.status >= 400 && attempt.status < 500) {
     return {
       kind: "failed",
-      retryable: false,
+      retryable: isRateLimitRejection(attempt),
       reason: attempt.detail ?? `rejected with status ${attempt.status}`,
+      ...(attempt.errorCode ? { errorCode: attempt.errorCode } : {}),
     };
   }
   return {

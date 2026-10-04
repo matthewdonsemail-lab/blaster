@@ -125,6 +125,8 @@ export const sequenceTables = {
     lastSentAt: v.optional(v.number()),
     /** Set when a send was skipped, so an operator can see why. */
     lastSkipReason: v.optional(v.string()),
+    /** Telnyx error code of the last rejected send, so expiry, filtering and rate limits can be told apart. */
+    lastErrorCode: v.optional(v.string()),
     /**
      * Consecutive failed attempts at the current step. The machine's retry
      * ceiling only means something across restarts if the count is persisted:
