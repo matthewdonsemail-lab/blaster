@@ -198,6 +198,9 @@ export async function recordOutboundRow(
     text: string;
     telnyxMessageId: string;
     sentAt: number;
+    sequenceId?: Id<"sequences">;
+    enrollmentId?: Id<"sequenceEnrollments">;
+    stepIndex?: number;
   },
 ): Promise<{ conversationId: unknown; messageId: unknown }> {
   const from = normalizePhoneNumber(message.from);
@@ -215,6 +218,9 @@ export async function recordOutboundRow(
     status: "sent",
     telnyxMessageId: message.telnyxMessageId,
     sentAt: message.sentAt,
+    ...(message.sequenceId ? { sequenceId: message.sequenceId } : {}),
+    ...(message.enrollmentId ? { enrollmentId: message.enrollmentId } : {}),
+    ...(message.stepIndex !== undefined ? { stepIndex: message.stepIndex } : {}),
   });
   const conversation = await ctx.db.get("conversations", conversationId);
   const count = ((conversation as { messageCount?: number } | null)?.messageCount ?? 0) + 1;

@@ -69,6 +69,14 @@ export const conversationTables = {
     /** Telnyx webhook event id. Present on inbound; absent on a message Blaster sent. */
     providerEventId: v.optional(v.string()),
     sentAt: v.number(),
+    /**
+     * Which sequence send produced this row. Set only on outbound messages a
+     * sequence enrollment sent; absent on inbound rows and ad-hoc sends.
+     * `stepIndex` is the cursor of the step that was sent (0-based).
+     */
+    sequenceId: v.optional(v.id("sequences")),
+    enrollmentId: v.optional(v.id("sequenceEnrollments")),
+    stepIndex: v.optional(v.number()),
     media: v.optional(
       v.array(v.object({ url: v.string(), contentType: v.optional(v.string()), size: v.optional(v.number()) })),
     ),
@@ -79,5 +87,8 @@ export const conversationTables = {
     // Outbound sends by recipient and time, so the daily cap counts what this
     // deployment actually sent. Additive index: backfilled by Convex, no
     // migration, no existing query changes shape.
-    .index("to", ["to", "sentAt"]),
+    .index("to", ["to", "sentAt"])
+    // Per-sequence and per-enrollment reads for reporting and step attribution.
+    .index("sequence", ["sequenceId", "sentAt"])
+    .index("enrollment", ["enrollmentId", "stepIndex"]),
 };
