@@ -37,7 +37,12 @@ Options
 
 Reads the operator session written by "blaster login".`;
 
-async function liveClient(flags: CliFlags, json: boolean, root: string): Promise<BlasterApiClient | number> {
+export async function liveClient(
+  flags: CliFlags,
+  json: boolean,
+  root: string,
+  label = "accounts",
+): Promise<BlasterApiClient | number> {
   const home = loadHome(root);
   const explicit = typeof flags.get("api-url") === "string" ? (flags.get("api-url") as string) : null;
   const apiUrl =
@@ -46,20 +51,20 @@ async function liveClient(flags: CliFlags, json: boolean, root: string): Promise
     Object.keys(home.sessions)[0] ??
     null;
   if (!apiUrl) {
-    console.error('blaster accounts: no signed-in API. Run "blaster login" first, or pass --api-url.');
+    console.error(`blaster ${label}: no signed-in API. Run "blaster login" first, or pass --api-url.`);
     return 1;
   }
   let session = await ensureLiveSession(root, apiUrl);
   if (!session) {
     if (!isInteractive(json)) {
-      console.error(`blaster accounts: no live session for ${apiUrl}. Run "blaster login" first.`);
+      console.error(`blaster ${label}: no live session for ${apiUrl}. Run "blaster login" first.`);
       return 1;
     }
     const code = await loginMain(new Map([["api-url", apiUrl]]), json, root);
     if (code !== 0) return code;
     session = await ensureLiveSession(root, apiUrl);
     if (!session) {
-      console.error(`blaster accounts: no live session for ${apiUrl}. Run "blaster login" first.`);
+      console.error(`blaster ${label}: no live session for ${apiUrl}. Run "blaster login" first.`);
       return 1;
     }
   }

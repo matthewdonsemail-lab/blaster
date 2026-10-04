@@ -43,6 +43,8 @@ import {
   type SetSequencePoolInput,
   type SuppressionRow,
   type TelnyxAccountRow,
+  type AttachNumberInput,
+  type AttachNumberResult,
 } from "../types.ts";
 export interface BlasterApiClientOptions {
   /** Origin of the API, without a trailing path, e.g. http://localhost:4180 */
@@ -129,6 +131,8 @@ export interface BlasterApiClient {
   listSuppressions(): Promise<SuppressionRow[]>;
   /** Suppress a peer, or lift a suppression. */
   setSuppression(input: { peer: string; suppressed: boolean; reason?: string }): Promise<{ peer: string; changed: boolean }>;
+  /** Attach a number to its account, state, profile and pool, and report what is still missing before it can send. */
+  attachNumber(input: AttachNumberInput): Promise<AttachNumberResult>;
   /** Telnyx accounts the deployment sends through, with health and whether each key is set. */
   listAccounts(): Promise<TelnyxAccountRow[]>;
   /** Register an account, or change its label or status (active | burned | disabled). */
@@ -426,6 +430,10 @@ export function createBlasterApiClient(options: BlasterApiClientOptions): Blaste
         suppressed: input.suppressed,
         ...(input.reason === undefined ? {} : { reason: input.reason }),
       });
+    },
+
+    attachNumber(input) {
+      return post<AttachNumberResult>("/api/numbers/attach", { ...input });
     },
 
     async listAccounts() {

@@ -1,5 +1,6 @@
 import { internalMutation, mutation, type MutationCtx } from "../_generated/server.js";
 import { v } from "convex/values";
+import { attachNumber } from "./attach.js";
 import { phoneInput, type PhoneInput } from "./model.js";
 
 /**
@@ -145,6 +146,28 @@ export const setAllowUnregistered = mutation({
     });
     return { phoneNumber: args.phoneNumber, allowUnregistered: args.allow };
   },
+});
+
+/**
+ * Attach a number (just bought, or already owned) to its Telnyx account, the state
+ * it is owned in, its messaging profile and a pool, and report what is still
+ * missing before it can send. Repeatable. The account must already be registered,
+ * and the number must belong to that account's Telnyx login: Blaster does not
+ * check that, so attach only numbers you bought under it.
+ */
+export const attach = mutation({
+  args: {
+    phoneNumber: v.string(),
+    accountRef: v.optional(v.string()),
+    stateCode: v.optional(v.string()),
+    messagingProfileId: v.optional(v.string()),
+    countryCode: v.optional(v.string()),
+    numberType: v.optional(v.string()),
+    telnyxNumberId: v.optional(v.string()),
+    orderId: v.optional(v.string()),
+    poolId: v.optional(v.id("pools")),
+  },
+  handler: async (ctx, args) => attachNumber(ctx, args),
 });
 
 /** Internal version for provider sync actions. */

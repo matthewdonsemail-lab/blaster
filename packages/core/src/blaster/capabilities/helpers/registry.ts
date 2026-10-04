@@ -328,6 +328,22 @@ export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
 
   // --- Suppressions ---
   {
+    id: "numbers.attach",
+    resource: "numbers",
+    operation: "attachNumber",
+    title: "Attach a number so it can send",
+    description: "Attach a number to its Telnyx account, state, messaging profile and pool, and report what it still needs before it can send.",
+    mutating: true,
+    intendedSurfaces: ["convex", "http", "client", "cli", "mcp"],
+    mappings: {
+      convex: "api.phoneNumbers.mutations.attach",
+      http: "POST /api/numbers/attach",
+      client: "attachNumber",
+      cli: "blaster numbers attach",
+      mcp: "blaster_attach_number",
+    },
+  },
+  {
     id: "accounts.list",
     resource: "accounts",
     operation: "listAccounts",

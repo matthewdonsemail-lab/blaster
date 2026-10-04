@@ -59,7 +59,7 @@ import { INBOX_USAGE, inboxList, inboxShow, type CliFlags } from "./inbox.ts";
 import { SEND_USAGE, sendMain } from "./send.ts";
 import { SEQUENCE_USAGE, sequenceMain, type SequenceContext } from "./sequence.ts";
 import { POOLS_USAGE, poolsMain } from "./pools.ts";
-import { ACCOUNTS_USAGE, accountsMain } from "./accounts.ts";
+import { ACCOUNTS_USAGE, accountsMain, liveClient as accountsLiveClient } from "./accounts.ts";
 import { SUPPRESS_USAGE, suppressMain } from "./suppress.ts";
 
 interface Parsed {
@@ -167,6 +167,7 @@ const CAPABILITIES = [
   { id: "prospects.batchSend", cli: "", mcp: "", http: "POST /api/messages/batch-send" },
   { id: "suppressions.list", cli: "blaster suppress list", mcp: "blaster_list_suppressions", http: "GET /api/suppressions" },
   { id: "suppressions.set", cli: "blaster suppress add|remove", mcp: "blaster_set_suppression", http: "POST /api/suppressions" },
+  { id: "numbers.attach", cli: "blaster numbers attach", mcp: "blaster_attach_number", http: "POST /api/numbers/attach" },
   { id: "accounts.list", cli: "blaster accounts list", mcp: "blaster_list_accounts", http: "GET /api/accounts" },
   { id: "accounts.set", cli: "blaster accounts add|burn|disable|activate", mcp: "blaster_set_account", http: "POST /api/accounts" },
   { id: "accounts.assign", cli: "blaster accounts assign", mcp: "blaster_assign_number_account", http: "POST /api/accounts/assign" },
@@ -276,6 +277,7 @@ async function main(): Promise<number> {
       if (action === "buy" || action === "purchase") {
         return await numbersBuy(positional.slice(1), flags, json);
       }
+      if (action === "attach") return await numbersAttach(flags, json);
       if (action === "owned" || action === "list") return await numbersOwned(json);
       console.error(`blaster numbers: unknown action "${action}"\n${NUMBERS_USAGE}`);
       return 1;
@@ -600,7 +602,13 @@ const NUMBERS_USAGE = `Usage: blaster numbers <action>
          [--contains <digits>] [--startsWith <digits>] [--endsWith <digits>]
       Search Telnyx inventory for available numbers.
   buy --number <E.164> [--number <E.164>] [--profile <id>] [--reference <ref>] [--no-sync]
-      Purchase exact numbers. Upserts into Twenty agencyPhones unless --no-sync.
+      [--state <US>] [--pool <id>]
+      Purchase exact numbers on the default Telnyx account. Upserts into Twenty
+      agencyPhones unless --no-sync, records them in Convex, and prints what each
+      number still needs before it can send.
+  attach --number <E.164> [--account <ref>] [--state <US>] [--profile <id>] [--pool <id>]
+      Attach a number to its account, state, profile and pool. Use it for numbers
+      bought under another account in that account's own Telnyx console.
   owned
       Numbers already owned on the Telnyx account.`;
 
@@ -714,13 +722,86 @@ async function numbersBuy(
       synced += 1;
     }
   }
+  const attached = await attachBought(order, flags, json);
   console.log(
     json
-      ? asJson({ order, syncedToTwenty: synced })
-      : `Order ${order.id ?? "unknown"} (${order.status ?? "unknown"}): ${order.phoneNumbers.length} number(s), ${synced} synced to Twenty.`,
+      ? asJson({ order, syncedToTwenty: synced, attached })
+      : `Order ${order.id ?? "unknown"} (${order.status ?? "unknown"}): ${order.phoneNumbers.length} number(s), ${synced} synced to Twenty.` +
+          formatAttached(attached),
   );
   if (prompted) finish(`Order ${order.id ?? "unknown"} placed.`);
   return 0;
+}
+
+type AttachRow = AttachNumberResult | { phoneNumber: string; error: string };
+
+function formatAttached(rows: AttachRow[] | null): string {
+  if (rows === null) {
+    return "\nNot recorded in Convex (no signed-in session). Run \"blaster login\", then \"blaster numbers attach --number <E.164>\".";
+  }
+  return rows
+    .map((row) =>
+      "error" in row
+        ? `\n  ${row.phoneNumber}: could not attach (${row.error})`
+        : row.sendable
+          ? `\n  ${row.phoneNumber}: can send`
+          : `\n  ${row.phoneNumber}: cannot send yet, needs ${row.needs.join(", ")}`,
+    )
+    .join("");
+}
+
+/** Record bought numbers in Convex and attach them. Null when there is no live session. */
+async function attachBought(
+  order: { id?: string | null; messagingProfileId?: string | null; phoneNumbers: Array<{ phoneNumber: string; countryCode?: string; numberType?: string; id?: string }> },
+  flags: Map<string, string | boolean>,
+  json: boolean,
+): Promise<AttachRow[] | null> {
+  const client = await accountsLiveClient(flags, json, process.cwd(), "numbers");
+  if (typeof client === "number") return null;
+  const rows: AttachRow[] = [];
+  for (const purchased of order.phoneNumbers) {
+    try {
+      rows.push(
+        await client.attachNumber({
+          phoneNumber: purchased.phoneNumber,
+          ...(order.messagingProfileId ? { messagingProfileId: order.messagingProfileId } : {}),
+          ...(purchased.countryCode ? { countryCode: purchased.countryCode } : {}),
+          ...(purchased.numberType ? { numberType: purchased.numberType } : {}),
+          ...(purchased.id ? { telnyxNumberId: purchased.id } : {}),
+          ...(order.id ? { orderId: order.id } : {}),
+          ...(flagText(flags, "state") ? { stateCode: flagText(flags, "state") as string } : {}),
+          ...(flagText(flags, "pool") ? { poolId: flagText(flags, "pool") as string } : {}),
+        }),
+      );
+    } catch (error) {
+      rows.push({ phoneNumber: purchased.phoneNumber, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return rows;
+}
+
+async function numbersAttach(flags: Map<string, string | boolean>, json: boolean): Promise<number> {
+  const phoneNumber = flagText(flags, "number");
+  if (!phoneNumber) {
+    console.error(`blaster numbers attach: --number is required\n${NUMBERS_USAGE}`);
+    return 1;
+  }
+  const client = await accountsLiveClient(flags, json, process.cwd(), "numbers");
+  if (typeof client === "number") return client;
+  try {
+    const result = await client.attachNumber({
+      phoneNumber,
+      ...(flagText(flags, "account") ? { accountRef: flagText(flags, "account") as string } : {}),
+      ...(flagText(flags, "state") ? { stateCode: flagText(flags, "state") as string } : {}),
+      ...(flagText(flags, "profile") ? { messagingProfileId: flagText(flags, "profile") as string } : {}),
+      ...(flagText(flags, "pool") ? { poolId: flagText(flags, "pool") as string } : {}),
+    });
+    console.log(json ? asJson(result) : formatAttached([result]).trimStart());
+    return 0;
+  } catch (error) {
+    console.error(`blaster numbers attach: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
 }
 
 async function numbersOwned(json: boolean): Promise<number> {

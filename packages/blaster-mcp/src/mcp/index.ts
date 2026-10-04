@@ -162,8 +162,27 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         messagingProfileId: { type: "string", description: "Messaging profile to bind on the order." },
         customerReference: { type: "string", description: "Customer reference stored on the order." },
         syncToTwenty: { type: "boolean", description: "Mirror into agencyPhones. Defaults to true." },
+        stateCode: { type: "string", description: "USPS state the numbers are owned in. Defaults to the area code." },
+        poolId: { type: "string", description: "Pool to add the purchased numbers to." },
       },
       required: ["phoneNumbers"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_attach_number",
+    description:
+      "Attach a number (just bought or already owned) to its Telnyx account, state, messaging profile and pool, and report what it still needs before it can send (needs is empty when it can). The account must be registered first; attach only numbers that belong to that account's Telnyx login.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        phoneNumber: { type: "string", description: "The number in E.164." },
+        accountRef: { type: "string", description: "Registered Telnyx account ref. Omit for the default account." },
+        stateCode: { type: "string", description: "USPS 2-letter state the number is owned in." },
+        messagingProfileId: { type: "string", description: "Messaging profile bound to the number." },
+        poolId: { type: "string", description: "Pool to add the number to." },
+      },
+      required: ["phoneNumber"],
       additionalProperties: false,
     },
   },
@@ -766,10 +785,49 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
           synced += 1;
         }
       }
+      const attached: unknown[] = [];
+      for (const purchased of order.phoneNumbers) {
+        try {
+          attached.push(
+            await blasterApi().attachNumber({
+              phoneNumber: purchased.phoneNumber,
+              ...(order.messagingProfileId ? { messagingProfileId: order.messagingProfileId } : {}),
+              ...(purchased.countryCode ? { countryCode: purchased.countryCode } : {}),
+              ...(purchased.numberType ? { numberType: purchased.numberType } : {}),
+              ...(purchased.id ? { telnyxNumberId: purchased.id } : {}),
+              ...(order.id ? { orderId: order.id } : {}),
+              ...(typeof args.stateCode === "string" ? { stateCode: args.stateCode } : {}),
+              ...(typeof args.poolId === "string" ? { poolId: args.poolId } : {}),
+            }),
+          );
+        } catch (error) {
+          attached.push({ phoneNumber: purchased.phoneNumber, error: describeApiError(error) });
+        }
+      }
       return {
-        text: `Order ${order.id ?? "unknown"} (${order.status ?? "unknown"}): ${order.phoneNumbers.length} number(s), ${synced} synced to Twenty.`,
-        structured: { order, syncedToTwenty: synced },
+        text: `Order ${order.id ?? "unknown"} (${order.status ?? "unknown"}): ${order.phoneNumbers.length} number(s), ${synced} synced to Twenty. Check "attached" for what each number still needs before it can send.`,
+        structured: { order, syncedToTwenty: synced, attached },
       };
+    }
+
+    case "blaster_attach_number": {
+      const phoneNumber = typeof args.phoneNumber === "string" ? args.phoneNumber : "";
+      if (!phoneNumber) return { text: "phoneNumber is required." };
+      try {
+        const result = await blasterApi().attachNumber({
+          phoneNumber,
+          ...(typeof args.accountRef === "string" ? { accountRef: args.accountRef } : {}),
+          ...(typeof args.stateCode === "string" ? { stateCode: args.stateCode } : {}),
+          ...(typeof args.messagingProfileId === "string" ? { messagingProfileId: args.messagingProfileId } : {}),
+          ...(typeof args.poolId === "string" ? { poolId: args.poolId } : {}),
+        });
+        return {
+          text: result.sendable ? `${result.phoneNumber} can send.` : `${result.phoneNumber} cannot send yet: ${result.needs.join(", ")}.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
     }
 
     case "blaster_list_numbers": {
