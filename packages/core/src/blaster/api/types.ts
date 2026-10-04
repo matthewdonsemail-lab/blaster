@@ -246,6 +246,14 @@ export interface PoolNumberRow {
   lastSentAt: number | null;
   assignedAt: number;
   removedAt: number | null;
+  /** Owning Telnyx account; absent means the default account. */
+  accountRef?: string;
+  /** That account's state, "unknown" when the ref is not registered, null for the default. */
+  accountStatus?: "active" | "burned" | "disabled" | "unknown" | null;
+  /** Whether the pool can send from this number right now. */
+  sendable?: boolean;
+  /** Why not, when sendable is false (e.g. account-unavailable, missing-registration). */
+  blockedReason?: string;
 }
 
 /** A pool with its memberships, as `/api/pools/:id` returns it. */

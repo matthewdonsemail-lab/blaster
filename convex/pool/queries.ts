@@ -1,6 +1,6 @@
 import { internalQuery, query } from "../_generated/server.js";
 import { v } from "convex/values";
-import { availableSender as readAvailableSender, membersOf } from "./helpers.js";
+import { availableSender as readAvailableSender, describeMember, membersOf } from "./helpers.js";
 import { DEFAULT_LIST_LIMIT } from "./utils.js";
 
 /**
@@ -28,7 +28,12 @@ export const getPool = query({
   handler: async (ctx, args) => {
     const pool = await ctx.db.get("pools", args.poolId);
     if (!pool) return null;
-    return { ...pool, numbers: await membersOf(ctx, args.poolId) };
+    const now = Date.now();
+    const members = await membersOf(ctx, args.poolId);
+    const numbers = await Promise.all(
+      members.map(async (member) => ({ ...member, ...(await describeMember(ctx, member, now)) })),
+    );
+    return { ...pool, numbers };
   },
 });
 
