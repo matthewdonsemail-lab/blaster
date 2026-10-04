@@ -44,6 +44,7 @@ export const phoneTables = {
     campaignUseCase: v.optional(v.string()),
     assignmentStatus: v.optional(v.string()),
     carrierProvisioningStatus: v.optional(v.string()),
+    tollFreeVerification: v.optional(v.string()),
     complianceCheckedAt: v.optional(v.number()),
     complianceSource: v.optional(v.string()),
   })
