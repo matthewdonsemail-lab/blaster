@@ -34,6 +34,8 @@ export const summaryOf = (row: Doc<"conversations">) => ({
   latestPreview: row.latestPreview ?? null,
   messageCount: row.messageCount ?? 0,
   latestMessageId: row.latestMessageId ?? null,
+  prospectId: row.prospectId ?? null,
+  leadId: row.leadId ?? null,
 });
 
 /**

@@ -57,7 +57,7 @@ import {
 } from "@blaster/core";
 import { TelnyxError, listMessagingProfiles, sendMessage } from "./lib/telnyx/messaging/index.ts";
 import { readBreakdownFrom, twentyReader } from "./lib/pipeline/breakdown/index.ts";
-import { applyOutboundStatus, conversationMessages, listConversations, recordInboundMessage } from "./lib/convex/index.ts";
+import { applyOutboundStatus, conversationMessages, linkConversation, listConversations, recordInboundMessage } from "./lib/convex/index.ts";
 import {
   addPoolNumber,
   commitSequenceDraft,
@@ -83,7 +83,7 @@ import {
   setSuppression,
 } from "./lib/convex/index.ts";
 import { operatorIdentity, requireOperator, resolveOperatorActor } from "./lib/auth/operator/index.ts";
-import { broadcastReply, classifyMessageRules } from "@blaster/core";
+import { AGENCY_PROSPECTS_OBJECT, broadcastReply, classifyMessageRules, promoteProspectToLead } from "@blaster/core";
 import {
   eventTypeOf,
   handleCallEvent,
@@ -170,6 +170,39 @@ async function notifyReply(
   } catch {
     // `broadcastReply` reports rather than throws; this is belt and braces for
     // the case where something in the fan-out itself is wrong.
+  }
+}
+
+/**
+ * Promote the prospect behind a positive reply to a lead and link the thread.
+ *
+ * The thread keeps its Convex history; the lead only points at it. Idempotent
+ * (`promoteProspectToLead` returns the existing lead), and it never fails the
+ * webhook: the reply is already stored, and a Twenty outage must not turn it
+ * into a 500 Telnyx will retry.
+ */
+async function promoteOnPositiveReply(
+  inbound: { from: string; body: string; receivedAt: number },
+  thread: { conversationId: string; prospectId: string; leadId: string | null },
+): Promise<void> {
+  if (thread.leadId) return;
+  if (!process.env.TWENTY_BASE_URL || !process.env.TWENTY_API_KEY) return;
+  try {
+    const client = twentyClient();
+    const prospect = await client.get<{ name?: unknown }>(AGENCY_PROSPECTS_OBJECT, thread.prospectId);
+    const { lead } = await promoteProspectToLead(client, {
+      prospectId: thread.prospectId,
+      conversationId: thread.conversationId,
+      phone: inbound.from,
+      ...(typeof prospect?.name === "string" && prospect.name ? { name: prospect.name } : {}),
+      replyBody: inbound.body,
+      replyAt: inbound.receivedAt,
+    });
+    await linkConversation(thread.conversationId, thread.prospectId, lead.id);
+  } catch (error) {
+    // Not rethrown: the reply is stored. Logged so a lead that exists in Twenty
+    // but is unlinked in Convex is findable; the next positive reply retries.
+    console.warn(`[promote] prospect ${thread.prospectId}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -1591,6 +1624,13 @@ app.post("/api/webhooks/telnyx", async (c) => {
     const stopped = result.status === "stored" ? (result.stoppedEnrollments ?? []) : [];
     if (result.status === "stored") {
       await notifyReply(inbound, stopped);
+      if (result.prospectId && classifyMessageRules(inbound.body).state === "positive") {
+        await promoteOnPositiveReply(inbound, {
+          conversationId: result.conversationId,
+          prospectId: result.prospectId,
+          leadId: result.leadId,
+        });
+      }
     }
     return c.json(
       {

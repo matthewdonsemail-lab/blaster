@@ -108,3 +108,15 @@ export const ref = {
     }>
   >("conversations/queries:listConversations"),
 } as const;
+
+export const linkRef = makeFunctionReference<
+  "mutation",
+  { conversationId: string; prospectId: string; leadId?: string },
+  { status: string; field?: string }
+>("conversations/mutations:linkConversation");
+
+export const inboundRef = makeFunctionReference<
+  "mutation",
+  { from: string; to: string; body: string; providerEventId?: string },
+  { status: string; conversationId: string; prospectId: string | null; leadId: string | null }
+>("conversations/mutations:recordInboundMessage");

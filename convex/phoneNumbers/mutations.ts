@@ -70,6 +70,7 @@ export const complianceSnapshotArgsValidator = {
   campaignUseCase: v.optional(v.string()),
   assignmentStatus: v.optional(v.string()),
   carrierProvisioningStatus: v.optional(v.string()),
+  tollFreeVerification: v.optional(v.string()),
   complianceSource: v.optional(v.string()),
   complianceCheckedAt: v.optional(v.number()),
 };
@@ -85,6 +86,7 @@ async function recordComplianceSnapshot(
     campaignUseCase?: string;
     assignmentStatus?: string;
     carrierProvisioningStatus?: string;
+    tollFreeVerification?: string;
     complianceSource?: string;
     complianceCheckedAt?: number;
   },
@@ -101,6 +103,10 @@ async function recordComplianceSnapshot(
     campaignUseCase: args.campaignUseCase,
     assignmentStatus: args.assignmentStatus,
     carrierProvisioningStatus: args.carrierProvisioningStatus,
+    // Only written when supplied so a 10DLC refresh cannot erase toll-free state.
+    ...(args.tollFreeVerification !== undefined
+      ? { tollFreeVerification: args.tollFreeVerification }
+      : {}),
     complianceSource: args.complianceSource ?? "manual-sync",
     complianceCheckedAt: args.complianceCheckedAt ?? Date.now(),
   };

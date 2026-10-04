@@ -4,6 +4,9 @@ import type { Id } from "../_generated/dataModel.js";
 import { dueAtForStep, type SequenceStepDraft } from "../../packages/core/src/pipeline/sequence/index";
 import { isSuppressed } from "../suppressions/model.js";
 
+/** Enrollment states that still own the prospect in a sequence. */
+const LIVE_STATUSES: ReadonlySet<string> = new Set(["active", "paused", "ambiguous", "awaiting-human"]);
+
 /**
  * The enrollment write, shared by the public `enroll` mutation and the internal
  * `enrollInternal` the Twenty seam uses.
@@ -29,6 +32,19 @@ export async function enrollRecipient(
   if (sequence.status !== "active") {
     throw new Error(`sequence ${args.sequenceId} is ${sequence.status}, so nothing can be enrolled`);
   }
+
+  // One live enrollment per prospect per sequence. A second would send the whole
+  // sequence twice, so enrolling again is idempotent and returns the existing row.
+  // Finished enrollments (completed, replied, opted-out, failed) do not block: that
+  // is a deliberate re-enroll. Bounded by the handful of rows one prospect can have.
+  const existing = await ctx.db
+    .query("sequenceEnrollments")
+    .withIndex("sequenceRecipient", (q) =>
+      q.eq("sequenceId", args.sequenceId).eq("recipientId", args.recipientId),
+    )
+    .take(20);
+  const live = existing.find((row) => LIVE_STATUSES.has(row.status));
+  if (live) return live._id;
 
   // Refuse to enroll a suppressed peer. This is the durable check the
   // enrollment snapshot cannot make: a person who sent STOP in another

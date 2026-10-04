@@ -161,3 +161,22 @@ export const conversationForNumber = query({
     return row ? summaryOf(row) : null;
   },
 });
+
+/**
+ * Every thread linked to a Twenty prospect or lead, so promotion and the
+ * lead view can find the history by the CRM record instead of a phone match.
+ */
+export const conversationsForRecord = query({
+  args: { prospectId: v.optional(v.string()), leadId: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const rows = args.leadId
+      ? await ctx.db.query("conversations").withIndex("leadId", (q) => q.eq("leadId", args.leadId)).take(20)
+      : args.prospectId
+        ? await ctx.db
+            .query("conversations")
+            .withIndex("prospectId", (q) => q.eq("prospectId", args.prospectId))
+            .take(20)
+        : [];
+    return rows.map(summaryOf);
+  },
+});

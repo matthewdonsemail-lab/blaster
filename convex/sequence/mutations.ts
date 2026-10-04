@@ -144,6 +144,40 @@ export const enroll = mutation({
 });
 
 /**
+ * Stop sending to one enrollment without ending it. The cursor is kept, so
+ * `resumeEnrollment` continues at the step that was owed. Only an active
+ * enrollment can be paused; anything else is reported, not overwritten.
+ */
+export const pauseEnrollment = mutation({
+  args: { enrollmentId: v.id("sequenceEnrollments") },
+  handler: async (ctx, args) => {
+    const enrollment = await ctx.db.get("sequenceEnrollments", args.enrollmentId);
+    if (!enrollment) throw new Error(`unknown enrollment ${args.enrollmentId}`);
+    if (enrollment.status !== "active") return { status: enrollment.status };
+    await ctx.db.patch("sequenceEnrollments", args.enrollmentId, {
+      status: "paused",
+      nextDueAt: undefined,
+    });
+    return { status: "paused" as const };
+  },
+});
+
+/** Put a paused enrollment back in the queue, due now. */
+export const resumeEnrollment = mutation({
+  args: { enrollmentId: v.id("sequenceEnrollments") },
+  handler: async (ctx, args) => {
+    const enrollment = await ctx.db.get("sequenceEnrollments", args.enrollmentId);
+    if (!enrollment) throw new Error(`unknown enrollment ${args.enrollmentId}`);
+    if (enrollment.status !== "paused") return { status: enrollment.status };
+    await ctx.db.patch("sequenceEnrollments", args.enrollmentId, {
+      status: "active",
+      nextDueAt: Date.now(),
+    });
+    return { status: "active" as const };
+  },
+});
+
+/**
  * Enroll one prospect from inside the backend.
  *
  * The same write as `enroll`, reached by the Twenty enroll seam (an action has
@@ -212,6 +246,10 @@ export const recordStep = internalMutation({
     outcome: stepOutcomeValidator,
     /** Why a send was skipped or failed, so an operator can see the reason. */
     skipReason: v.optional(v.string()),
+    /** Telnyx error code of a rejected send. */
+    errorCode: v.optional(v.string()),
+    /** On a failed send, false means retrying cannot help. Absent keeps the old retry behaviour. */
+    retryable: v.optional(v.boolean()),
     steps: v.array(stepFieldsValidator),
     /**
      * What the provider confirmed, present only when the send is known to have
@@ -241,7 +279,9 @@ export const recordStep = internalMutation({
       // considers retryable. The counter is persisted because an in-memory one
       // would reset every tick and retry forever.
       const attempts = (enrollment.attempts ?? 0) + 1;
-      const exhausted = attempts >= MAX_STEP_ATTEMPTS;
+      // A permanent rejection (bad number, unregistered, filtered) fails the same
+      // way every time, so retrying it only spends attempts and carrier calls.
+      const exhausted = args.retryable === false || attempts >= MAX_STEP_ATTEMPTS;
       const lastBackoff = RETRY_BACKOFF_MS.length - 1;
       const backoff =
         RETRY_BACKOFF_MS[Math.min(attempts - 1, lastBackoff)] ??
@@ -252,6 +292,7 @@ export const recordStep = internalMutation({
         status: exhausted ? "failed" : "active",
         nextDueAt: exhausted ? undefined : Date.now() + backoff,
         lastSkipReason: args.skipReason ?? "send-failed",
+        lastErrorCode: args.errorCode,
       });
       return { status: exhausted ? ("failed" as const) : ("active" as const), attempts };
     }

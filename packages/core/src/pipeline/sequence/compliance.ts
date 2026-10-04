@@ -21,6 +21,7 @@ export type SenderReadinessReason =
   | "assignment-pending"
   | "provisioning-pending"
   | "snapshot-stale"
+  | "tollfree-unverified"
   | "unsupported-jurisdiction";
 
 export type SenderReadiness =
@@ -43,6 +44,8 @@ export interface CheckSenderReadinessInput {
   campaignUseCase?: string | null;
   assignmentStatus?: string | null;
   carrierProvisioningStatus?: string | null;
+  /** `unverified` | `pending` | `verified`; missing is treated as unverified. */
+  tollFreeVerification?: string | null;
   complianceCheckedAt?: number | null;
   now: number;
   maxSnapshotAgeMs?: number;
@@ -71,6 +74,12 @@ export function requires10DlcRegistration(input: {
   return isUs && !isTollFreeOrShort;
 }
 
+/** True for numbers whose type marks them toll-free. */
+export function isTollFree(input: { numberType?: string | null }): boolean {
+  const type = (input.numberType ?? "").toLowerCase();
+  return type === "toll_free" || type === "tollfree";
+}
+
 /**
  * Pure evaluation of whether a sender is verified and permitted to send outbound SMS.
  */
@@ -84,7 +93,21 @@ export function checkSenderReadiness(input: CheckSenderReadinessInput): SenderRe
     };
   }
 
-  // 2. Check if 10DLC registration applies
+  // 2. Toll-free: unverified numbers are filtered by carriers (~0.25 msg/s, then queue
+  // expiry), so only pending or verified numbers may send. Missing means unverified.
+  if (isTollFree(input)) {
+    const verification = (input.tollFreeVerification ?? "").toLowerCase();
+    if (verification !== "verified" && verification !== "pending") {
+      return {
+        ready: false,
+        reason: "tollfree-unverified",
+        detail: `Toll-free verification is '${input.tollFreeVerification ?? "unknown"}', must be pending or verified`,
+      };
+    }
+    return { ready: true };
+  }
+
+  // 3. Check if 10DLC registration applies
   if (!requires10DlcRegistration(input)) {
     return { ready: true };
   }

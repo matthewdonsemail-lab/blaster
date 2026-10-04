@@ -31,6 +31,7 @@ export {
   listPools,
   listSequenceDrafts,
   listSequences,
+  linkConversation,
   listSuppressions,
   recordInboundMessage,
   removePoolNumber,
