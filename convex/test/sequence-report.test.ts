@@ -1,7 +1,7 @@
 import { makeFunctionReference } from "convex/server";
 import { describe, expect, test } from "vitest";
 import { buildSequenceReport } from "../sequence/report.js";
-import { seedSequence, testBackend } from "./harness.js";
+import { seedSequence, testBackend } from "./harness.support.js";
 
 describe("buildSequenceReport", () => {
   test("attributes a reply to the step before the cursor and computes reply rate", () => {

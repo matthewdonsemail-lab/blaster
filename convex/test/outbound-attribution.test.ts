@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { applySentOutcome } from "../sequence/model.js";
-import { required, seedSequence, testBackend } from "./harness.js";
+import { required, seedSequence, testBackend } from "./harness.support.js";
 
 /**
  * Outbound messages carry the sequence, enrollment and step that sent them, so

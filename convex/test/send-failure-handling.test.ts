@@ -1,6 +1,6 @@
 import { makeFunctionReference } from "convex/server";
 import { describe, expect, test } from "vitest";
-import { required, seedSequence, testBackend } from "./harness.js";
+import { required, seedSequence, testBackend } from "./harness.support.js";
 
 const recordStep = makeFunctionReference<
   "mutation",

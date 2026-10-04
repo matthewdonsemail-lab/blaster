@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { required, seedPhoneNumber, seedPool, testBackend } from "./harness.js";
-import { ref } from "./refs.js";
+import { required, seedPhoneNumber, seedPool, testBackend } from "./harness.support.js";
+import { ref } from "./refs.support.js";
 
 /**
  * The pool, against a real Convex runtime.

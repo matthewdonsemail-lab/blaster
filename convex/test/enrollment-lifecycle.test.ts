@@ -1,7 +1,7 @@
 import { makeFunctionReference } from "convex/server";
 import { describe, expect, test } from "vitest";
-import { required, seedSequence, testBackend } from "./harness.js";
-import { ref } from "./refs.js";
+import { required, seedSequence, testBackend } from "./harness.support.js";
+import { ref } from "./refs.support.js";
 
 const pauseEnrollment = makeFunctionReference<"mutation", { enrollmentId: string }, { status: string }>(
   "sequence/mutations:pauseEnrollment",
