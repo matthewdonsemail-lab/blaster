@@ -14,14 +14,14 @@ What the vendors require (sources at the end):
 | --- | --- | --- |
 | Claude Code, Codex (local) | Stdio MCP server plus plugin manifest | `built`: `plugins/blaster/`, `blaster-mcp` over stdio. Not installed and exercised end to end from a clean machine. |
 | Claude Code, Codex (remote, bearer header) | Streamable HTTP MCP at a URL, `Authorization: Bearer` | `proven` 2026-10-04: `POST /mcp` on `https://blaster.listeningkit.com` (the only documented entry point; first proven on the Vercel hostname). No token gives 401; with the operator token `tools/list` returns the tool table and `blaster_list_accounts`, `blaster_list_pools`, `blaster_list_suppressions` return real answers as the caller. Route test: `apps/api/test/mcp-route.test.ts`. Needed a `vercel.json` rewrite (#27). |
-| Claude (claude.ai connector) | Remote MCP over Streamable HTTP at a public HTTPS URL; OAuth with redirect `https://claude.ai/api/mcp/auth_callback` | `open`: no remote endpoint |
-| ChatGPT (developer mode / app) | Remote MCP, Streamable HTTP recommended; OAuth 2.1 with protected-resource metadata at `/.well-known/oauth-protected-resource`; per-tool `securitySchemes` | `open`: no remote endpoint |
+| Claude (claude.ai connector) | Remote MCP over Streamable HTTP at a public HTTPS URL; OAuth with redirect `https://claude.ai/api/mcp/auth_callback` | `built`: remote endpoint live at `https://blaster.listeningkit.com/mcp`; connector OAuth (authorization-server metadata / dynamic registration via Twenty) still `open` |
+| ChatGPT (developer mode / app) | Remote MCP, Streamable HTTP recommended; OAuth 2.1 with protected-resource metadata at `/.well-known/oauth-protected-resource`; per-tool `securitySchemes` | `built`: remote endpoint live; OAuth shim still `open` |
 
-Work: (1) host `blaster-mcp` as a Streamable HTTP server (same tool list as stdio, one code path); (2) put operator auth in front of it (OAuth 2.1 metadata, per-tool security schemes) reusing the Twenty OAuth identity the HTTP API already uses; (3) install the plugin on a clean machine in Claude Code and Codex and record the run; (4) connect it from ChatGPT developer mode and from claude.ai and record the run. Blocker: `TWENTY_OAUTH_CLIENT_SECRET` is not set anywhere.
+Work: (1) done: `blaster-mcp` served as a Streamable HTTP server sharing the stdio tool table, behind the operator gate (#25, #27). (2) remaining: publish authorization-server metadata pointing at Twenty (Twenty accepts dynamic client registration at `/oauth/register`, proven during the login move in #30 — the shim is small). (3) install the plugin on a clean machine in Claude Code and Codex and record the run; (4) connect it from ChatGPT developer mode and from claude.ai and record the run. Auth today is `Authorization: Bearer <operator token>`; no `TWENTY_OAUTH_CLIENT_SECRET` is needed for this path (login moved to a public PKCE client in #30).
 
 ## 2. Parity: CLI, Clack menus, MCP, HTTP
 
-Every capability exists on every surface it is meant for, and the Clack wizards ask for the same inputs the MCP tool takes. `blaster capabilities` and `check:surfaces` already enforce command/tool/route parity for the capability registry (`proven`: pre-push check). Not enforced yet: **wizard-to-tool input parity** (the prompts `sequence new` and `pool` ask versus the arguments of the MCP tools). Work: a test that lists each wizard's prompted fields and asserts each is an input of the matching tool, and the reverse.
+Every capability exists on every surface it is meant for, and the Clack wizards ask for the same inputs the MCP tool takes. `blaster capabilities` and `check:surfaces` enforce command/tool/route parity for the capability registry (`proven`: pre-push check). Wizard-to-tool input parity is enforced by `packages/blaster-cli/test/wizard-mcp-parity.test.ts` (#24): each command's flags are paired with its MCP tool against real help text and tool schemas in both directions — adding an input on one side only fails the test. Cancel/lifecycle surfaces (`sequence cancel|status`, `enrollments cancel|pause|resume`, 5 MCP tools) are covered the same way (#32, #33).
 
 ## 3. Sender rules (what a number may send to)
 
@@ -37,11 +37,11 @@ Rules that must be enforced before a send, not discovered after:
 | Per-number and per-campaign rate limits | partly: constants, not per-registration ceilings (`docs/rate-limits-and-compliance.md`) |
 | Account health (burned/disabled account skipped) | `proven` (#16, #19) |
 
-Work for the state rule: store each owned number's state (from its area code, overridable), derive the recipient's state, and in the readiness check and pool selection prefer, and by policy require, a match. Needs a decision from Matt: hard block, or prefer-then-fall-back with a warning. A pool with numbers in several states then picks the matching one automatically.
+Work for the state rule: store each owned number's state (from its area code, overridable), derive the recipient's state, and in the readiness check and pool selection prefer, and by policy require, a match. Policy is hard block, no fallback (confirmed; a per-campaign opt-in fallback is not built). A pool with numbers in several states picks the matching one automatically; with no match the enrollment parks (`pool-no-state-matching-sender` / `state-mismatch`).
 
 ## 4. Buying numbers inside the wizard flow
 
-Buying a number must end with the number attached to what lets it send: Telnyx account, messaging profile, 10DLC campaign (or toll-free verification), and pool. Today `numbers buy` orders the number and the purchase action stores it; account assignment, campaign assignment and pool membership are separate manual steps. Work: make the buy flow (CLI wizard and MCP tool) take and apply account, profile and campaign, show the resulting readiness, and refuse to call the number sendable until it is.
+Buying a number records it in the Convex ledger and reports what it still needs before it can send (#22). The buy flow (CLI wizard and MCP tool) takes account state, profile and pool (`--state`, `--pool`; MCP `stateCode`, `poolId`); `numbers attach` / `blaster_attach_number` / `POST /api/numbers/attach` applies the same for numbers bought elsewhere. A bought number is never assumed sendable. Not built: buying under a non-default account from Blaster (buy uses the default key), and assigning the number to a 10DLC campaign (reported as a `needs` gap).
 
 ## 5. Live test with the test account (Abel)
 
@@ -54,7 +54,7 @@ The test recipient is a team member's prospect record in Twenty. Success criteri
 5. A STOP suppresses the person and nothing further sends.
 6. The prospect-to-lead promotion keeps the same conversation.
 
-Status: enrolled and queued on the dev deployment; waiting for the next allowed send window. Items 1 to 6 are `open` until run.
+Status: the earlier queued test enrollment was cancelled (replaced-by-lifecycle-demo path, #32); a fresh 3-step short-interval run is `open` until executed. Campaign lifecycle tooling is `built`: `sequence cancel|status`, `enrollments cancel|pause|resume` on CLI/API/MCP with a masked lifecycle view, per-sequence `quietHoursOverride` (reason required, default off, consenting test recipient only), 15s runner cron (#32, #33). Items 1 to 6 remain `open` until a live run records Convex ids and Telnyx message ids. Item 6 (prospect-to-lead promotion keeps the conversation) belongs to the dialer/conversation work, not Blaster readiness — tracked there.
 
 ## 6. Documentation
 
