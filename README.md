@@ -111,6 +111,8 @@ blaster pools create --name "Ireland outbound"
 blaster pools add-number --pool <id> --number +353871234567
 blaster pools assign --sequence <seq-id> --pool <id>
 blaster suppress list
+blaster accounts list
+blaster accounts add acct-a --label "Main"
 blaster suppress add --peer +353871234567 --reason "inbound STOP"
 blaster login
 ```

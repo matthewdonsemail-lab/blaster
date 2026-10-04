@@ -581,6 +581,71 @@ export async function listSuppressions(): Promise<ReadResult<SuppressionRow>> {
   }
 }
 
+export interface TelnyxAccountSummary {
+  ref: string;
+  label?: string;
+  status: "active" | "burned" | "disabled";
+  note?: string;
+  keyEnvName: string;
+  keyConfigured: boolean;
+}
+
+/** Telnyx accounts with health and whether each key is set; never a key. */
+export async function listAccounts(): Promise<PoolResult<TelnyxAccountSummary[]>> {
+  return poolCall(async () => {
+    const rows = await convexClient()!.query(api.telnyxAccounts.mutations.listAccounts, {});
+    return rows.map((row) => ({
+      ref: row.ref,
+      ...(row.label ? { label: row.label } : {}),
+      status: row.status,
+      ...(row.note ? { note: row.note } : {}),
+      keyEnvName: row.keyEnvName,
+      keyConfigured: row.keyConfigured,
+    }));
+  });
+}
+
+/** Register an account if new, then apply a label or status change. */
+export async function setAccount(input: {
+  ref: string;
+  label?: string;
+  status?: "active" | "burned" | "disabled";
+  note?: string;
+}): Promise<PoolResult<{ ref: string; status: "active" | "burned" | "disabled"; keyEnvName: string }>> {
+  return poolCall(async () => {
+    const client = convexClient()!;
+    const registered = await client.mutation(api.telnyxAccounts.mutations.registerAccount, {
+      ref: input.ref,
+      ...(input.label ? { label: input.label } : {}),
+    });
+    let status: "active" | "burned" | "disabled" = "active";
+    if (input.status) {
+      await client.mutation(api.telnyxAccounts.mutations.setAccountStatus, {
+        ref: input.ref,
+        status: input.status,
+        ...(input.note ? { note: input.note } : {}),
+      });
+      status = input.status;
+    } else {
+      const current = (await client.query(api.telnyxAccounts.mutations.listAccounts, {})).find((row) => row.ref === input.ref);
+      if (current) status = current.status;
+    }
+    return { ref: input.ref, status, keyEnvName: registered.keyEnvName };
+  });
+}
+
+export async function assignNumberAccount(
+  phoneNumber: string,
+  ref?: string,
+): Promise<PoolResult<{ phoneNumber: string; accountRef: string | null }>> {
+  return poolCall(async () => {
+    return convexClient()!.mutation(api.telnyxAccounts.mutations.setNumberAccount, {
+      phoneNumber,
+      ...(ref ? { ref } : {}),
+    });
+  });
+}
+
 /** Record a suppression by hand, or lift one. Both operator actions. */
 export async function setSuppression(
   peer: string,

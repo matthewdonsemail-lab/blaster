@@ -1,7 +1,7 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-02T13:46:07Z
+updated: 2026-10-04T03:42:07Z
 commit: feat: transition to Convex-only sequence draft and resume lifecycle with atomic pool creation
 -->
 
@@ -82,13 +82,19 @@ the per-number or account ceiling.
 - [x] OpenAPI spec at `openapi.yaml` generated from the deployment by the official `convex-helpers open-api-spec` CLI (`pnpm openapi` to refresh); documents the Convex function surface including internal actions
 - [x] Open the PR and get the pool branch merged to `main` (ticket 05) — merged 2026-10-02, `9b70ac3`
 - [x] 10DLC compliance verification snapshot and send gate: `checkSenderReadiness` (7 gates, snapshot freshness limit), `checkDocReadiness`, hard send gate excluding unverified US long-codes
-- [x] Multi-scope token bucket rate limiting: atomic capacity check across account ceiling, per-number rate bucket, campaign class throughput, and brand daily cap
+- [ ] Multi-scope token bucket rate limiting: account ceiling, per-number bucket and a campaign bucket are applied; the brand limiter is never run (`brandId` is not passed) and T-Mobile's daily brand cap is not modelled (see `docs/rate-limits-and-compliance.md`)
 - [x] Stable sender identity: per-enrollment sender pinning (`pinnedSenderPhoneNumber`, `pinnedSenderNumberId`) from active pools
 - [x] State machine sender-readiness gate: `senderNotReady` guard parks unverified senders to `awaiting_human`
 - [x] Parity across operator surfaces: CLI (`blaster phones compliance`, `blaster sequence activate`), MCP (`blaster_check_phone_compliance`, `blaster_activate_sequence`, `blaster_register_sequence`), and HTTP API (`/api/phones/:number/compliance`, `/api/sequences/:id/activate`, `/api/sequences`)
 - [x] Recipient timezone derivation: synchronous area-code to USPS state mapping via `lookupAreaCodeState` in `timeZoneForNumber` prevents valid US numbers without explicit state codes from parking as unplaceable
 - [x] Telnyx 10DLC provider sync action: `phoneNumbers:refreshComplianceSnapshot` queries live carrier/campaign provisioning and updates the compliance snapshot
 - [x] Convex-only sequence draft/resume lifecycle and atomic pool creation: eliminate local sequence storage (.blaster/sequences.json), add resumable sequenceDrafts table in Convex with checkpointing, derive ownership server-side, atomic createPool with phoneNumbers array, and surface parity across CLI, API, MCP, and Convex HTTP router
+- [x] Toll-free verification gate (`tollFreeVerification`, fail closed), outbound attribution (`sequenceId`/`enrollmentId`/`stepIndex` on messages), Telnyx error codes + 429 backoff, enrollment dedupe + pause/resume, per-step `sequenceReport` (PRs #6-#10)
+- [x] Convex push and runtime fixes found on the dev deployment: test support files renamed `*.support.ts` (#11), dynamic `import()` removed from Convex functions (#12), fixed-number sequences use the number's bound profile (#15)
+- [x] Per-number operator override `allowUnregistered` (reason required, default strict) (#14)
+- [x] Telnyx accounts: `telnyxAccounts` registry, `TELNYX_API_KEY__<REF>` env keys, `phoneNumbers.accountRef`, burn-aware pool selection (#16); `blaster accounts`, `GET|POST /api/accounts`, `POST /api/accounts/assign`, MCP `blaster_list_accounts`/`blaster_set_account`/`blaster_assign_number_account`
+- [ ] Campaign to pool mapping derived from Twenty, one sender-orchestration layer for CLI/API/MCP/sequences, per-account webhooks and compliance refresh, auto-burn on carrier blocks
+- [ ] Clack wizards (`sequence new`, `pool`) show account and burned state on number pick lists; not yet verified in a real terminal
 - [ ] README reflects only live, relay-contracted CLI and MCP tools; `check:surfaces` enforces it as a pre-push gate
 - [ ] Authored docs aligned to current state: docs/sequencer.md delivery step, docs/architecture.md gates table, docs/README.md authored index, docs/deployment.md rewritten for Railcode
 - [ ] Dual-host plugin tree: `plugins/blaster/` carries both Claude Code (`.claude-plugin/` + `.mcp.json`) and Codex (root `plugin.json` + `mcp.json` + `.agents/plugins/marketplace.json`) from one source; five skills drawn from the as-built docs; vendor pages committed under `docs/plugins/`

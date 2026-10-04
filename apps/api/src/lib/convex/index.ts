@@ -13,6 +13,9 @@ export type {
 } from "./types.ts";
 export {
   addPoolNumber,
+  assignNumberAccount,
+  listAccounts,
+  setAccount,
   applyOutboundStatus,
   commitSequenceDraft,
   conversationMessages,

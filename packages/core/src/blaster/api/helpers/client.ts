@@ -42,6 +42,7 @@ import {
   type SequenceOption,
   type SetSequencePoolInput,
   type SuppressionRow,
+  type TelnyxAccountRow,
 } from "../types.ts";
 export interface BlasterApiClientOptions {
   /** Origin of the API, without a trailing path, e.g. http://localhost:4180 */
@@ -128,6 +129,12 @@ export interface BlasterApiClient {
   listSuppressions(): Promise<SuppressionRow[]>;
   /** Suppress a peer, or lift a suppression. */
   setSuppression(input: { peer: string; suppressed: boolean; reason?: string }): Promise<{ peer: string; changed: boolean }>;
+  /** Telnyx accounts the deployment sends through, with health and whether each key is set. */
+  listAccounts(): Promise<TelnyxAccountRow[]>;
+  /** Register an account, or change its label or status (active | burned | disabled). */
+  setAccount(input: { ref: string; label?: string; status?: TelnyxAccountRow["status"]; note?: string }): Promise<{ ref: string; status: TelnyxAccountRow["status"]; keyEnvName: string }>;
+  /** Assign a number to an account, or back to the default account with no ref. */
+  assignNumberAccount(input: { phoneNumber: string; ref?: string }): Promise<{ phoneNumber: string; accountRef: string | null }>;
   /**
    * Enroll prospects into a sequence straight from Twenty, matching the send
    * filter DSL. Returns a per-prospect outcome, never a bare count.
@@ -418,6 +425,27 @@ export function createBlasterApiClient(options: BlasterApiClientOptions): Blaste
         peer: input.peer,
         suppressed: input.suppressed,
         ...(input.reason === undefined ? {} : { reason: input.reason }),
+      });
+    },
+
+    async listAccounts() {
+      const body = await get<{ accounts: TelnyxAccountRow[] }>("/api/accounts", {});
+      return body.accounts;
+    },
+
+    setAccount(input) {
+      return post<{ ref: string; status: TelnyxAccountRow["status"]; keyEnvName: string }>("/api/accounts", {
+        ref: input.ref,
+        ...(input.label === undefined ? {} : { label: input.label }),
+        ...(input.status === undefined ? {} : { status: input.status }),
+        ...(input.note === undefined ? {} : { note: input.note }),
+      });
+    },
+
+    assignNumberAccount(input) {
+      return post<{ phoneNumber: string; accountRef: string | null }>("/api/accounts/assign", {
+        phoneNumber: input.phoneNumber,
+        ...(input.ref === undefined ? {} : { ref: input.ref }),
       });
     },
 

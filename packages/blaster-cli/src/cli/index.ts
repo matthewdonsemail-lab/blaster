@@ -59,6 +59,7 @@ import { INBOX_USAGE, inboxList, inboxShow, type CliFlags } from "./inbox.ts";
 import { SEND_USAGE, sendMain } from "./send.ts";
 import { SEQUENCE_USAGE, sequenceMain, type SequenceContext } from "./sequence.ts";
 import { POOLS_USAGE, poolsMain } from "./pools.ts";
+import { ACCOUNTS_USAGE, accountsMain } from "./accounts.ts";
 import { SUPPRESS_USAGE, suppressMain } from "./suppress.ts";
 
 interface Parsed {
@@ -118,6 +119,7 @@ Read and act on the pipeline.
    pools list|show|create|...   Manage number pools and assign one to a sequence
    pool                          Interactive: build a pool, pick numbers, assign it
    suppress list|add|remove      The durable per-person do-not-contact list
+   accounts list|add|burn|assign Telnyx accounts, their keys and which numbers they own
 
 Options
   --json                       Machine-readable output
@@ -165,6 +167,9 @@ const CAPABILITIES = [
   { id: "prospects.batchSend", cli: "", mcp: "", http: "POST /api/messages/batch-send" },
   { id: "suppressions.list", cli: "blaster suppress list", mcp: "blaster_list_suppressions", http: "GET /api/suppressions" },
   { id: "suppressions.set", cli: "blaster suppress add|remove", mcp: "blaster_set_suppression", http: "POST /api/suppressions" },
+  { id: "accounts.list", cli: "blaster accounts list", mcp: "blaster_list_accounts", http: "GET /api/accounts" },
+  { id: "accounts.set", cli: "blaster accounts add|burn|disable|activate", mcp: "blaster_set_account", http: "POST /api/accounts" },
+  { id: "accounts.assign", cli: "blaster accounts assign", mcp: "blaster_assign_number_account", http: "POST /api/accounts/assign" },
   { id: "conversations.list", cli: "blaster inbox list", mcp: "blaster_list_conversations", http: "GET /api/conversations" },
   { id: "conversations.persons", cli: "blaster inbox list --person", mcp: "blaster_list_conversation_persons", http: "GET /api/conversations?groupBy=person" },
   { id: "conversations.read", cli: "blaster inbox show", mcp: "blaster_get_messages", http: "GET /api/conversations/:id/messages" },
@@ -353,6 +358,15 @@ async function main(): Promise<number> {
         return 0;
       }
       return await poolsMain(positional.slice(1), flags, json);
+    }
+
+    case "accounts":
+    case "account": {
+      if (positional[0] === "help") {
+        console.log(ACCOUNTS_USAGE);
+        return 0;
+      }
+      return await accountsMain(positional.slice(1), flags, json);
     }
 
     case "suppress":
