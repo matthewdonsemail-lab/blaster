@@ -56,7 +56,8 @@ export type EnrollmentStatus =
   | "completed"
   | "failed"
   | "ambiguous"
-  | "awaiting-human";
+  | "awaiting-human"
+  | "cancelled";
 
 /** What the machine needs the runner to do next. Never performed here. */
 export type SequenceEffect =
@@ -130,6 +131,8 @@ export interface EnrollmentMachineInput {
   timeZone: string | null;
   /** True when the zone came from a multi-zone state. */
   approximateZone: boolean;
+  /** Operator override: do not defer for quiet hours. */
+  ignoreQuietHours?: boolean;
   /** When the owed step became due. Null means due now. */
   nextDueAt: number | null;
   lastSentAt: number | null;

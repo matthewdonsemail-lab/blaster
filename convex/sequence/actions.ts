@@ -202,6 +202,7 @@ export const runEnrollmentStep = internalAction({
       steps,
       fromNumber,
       senderReadiness,
+      ignoreQuietHours: Boolean(sequence.options?.quietHoursOverride),
       recipient: {
         id: enrollment.recipientId,
         to: enrollment.to ?? null,

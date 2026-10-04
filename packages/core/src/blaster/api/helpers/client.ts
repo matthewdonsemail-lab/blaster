@@ -44,6 +44,9 @@ import {
   type SuppressionRow,
   type TelnyxAccountRow,
   type AttachNumberInput,
+  type CancelSequenceResult,
+  type EnrollmentActionResult,
+  type SequenceLifecycle,
   type AttachNumberResult,
 } from "../types.ts";
 export interface BlasterApiClientOptions {
@@ -111,6 +114,16 @@ export interface BlasterApiClient {
   registerSequence(input: RegisterSequenceInput): Promise<RegisterSequenceResult>;
   /** Activate a sequence. */
   activateSequence(sequenceId: string): Promise<ActivateSequenceResult>;
+  /** Cancel a campaign: stop the sequence and every live enrollment, for good. */
+  cancelSequence(sequenceId: string, reason?: string): Promise<CancelSequenceResult>;
+  /** Cancel one prospect's enrollment, for good. */
+  cancelEnrollment(enrollmentId: string, reason?: string): Promise<EnrollmentActionResult>;
+  /** Pause one enrollment, keeping its place. */
+  pauseEnrollment(enrollmentId: string): Promise<EnrollmentActionResult>;
+  /** Resume a paused enrollment. */
+  resumeEnrollment(enrollmentId: string): Promise<EnrollmentActionResult>;
+  /** A campaign as it runs: state, each prospect's position, and sends in time order. */
+  sequenceLifecycle(sequenceId: string): Promise<SequenceLifecycle>;
   /** Delete a sequence. */
   deleteSequence(sequenceId: string): Promise<DeleteSequenceResult>;
   /** Check 10DLC compliance and carrier readiness snapshot for a phone number. */
@@ -386,6 +399,26 @@ export function createBlasterApiClient(options: BlasterApiClientOptions): Blaste
 
     activateSequence(sequenceId) {
       return post<ActivateSequenceResult>(`/api/sequences/${encodeURIComponent(sequenceId)}/activate`, {});
+    },
+
+    cancelSequence(sequenceId, reason) {
+      return post<CancelSequenceResult>(`/api/sequences/${encodeURIComponent(sequenceId)}/cancel`, reason === undefined ? {} : { reason });
+    },
+
+    cancelEnrollment(enrollmentId, reason) {
+      return post<EnrollmentActionResult>(`/api/enrollments/${encodeURIComponent(enrollmentId)}/cancel`, reason === undefined ? {} : { reason });
+    },
+
+    pauseEnrollment(enrollmentId) {
+      return post<EnrollmentActionResult>(`/api/enrollments/${encodeURIComponent(enrollmentId)}/pause`, {});
+    },
+
+    resumeEnrollment(enrollmentId) {
+      return post<EnrollmentActionResult>(`/api/enrollments/${encodeURIComponent(enrollmentId)}/resume`, {});
+    },
+
+    sequenceLifecycle(sequenceId) {
+      return get<SequenceLifecycle>(`/api/sequences/${encodeURIComponent(sequenceId)}/lifecycle`, {});
     },
 
     deleteSequence(sequenceId) {

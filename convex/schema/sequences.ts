@@ -36,6 +36,7 @@ export const sequenceTables = {
       requireProfileForCountry: v.boolean(),
       dailyCapPerRecipient: v.number(),
       pinSender: v.optional(v.boolean()),
+      quietHoursOverride: v.optional(v.string()),
     }),
     createdAt: v.number(),
   })
@@ -76,6 +77,7 @@ export const sequenceTables = {
         requireProfileForCountry: v.optional(v.boolean()),
         dailyCapPerRecipient: v.optional(v.number()),
         pinSender: v.optional(v.boolean()),
+        quietHoursOverride: v.optional(v.string()),
       }),
     ),
     ownerMemberId: v.optional(v.string()),

@@ -21,7 +21,7 @@ const crons = cronJobs();
 
 crons.interval(
   "sequence runner",
-  { minutes: 1 },
+  { seconds: 15 },
   internal.sequence.actions.runDueEnrollments,
   // Bounded work per tick. The due queue is drained oldest-first and the tick is
   // a minute, so a cap of 25 keeps a normal backlog moving while never fanning

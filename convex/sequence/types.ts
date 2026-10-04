@@ -56,6 +56,7 @@ export const enrollmentStatusValidator = v.union(
   v.literal("ambiguous"),
   v.literal("awaiting-human"),
   v.literal("failed"),
+  v.literal("cancelled"),
 );
 
 export type EnrollmentStatus = Infer<typeof enrollmentStatusValidator>;
@@ -213,6 +214,7 @@ export type RecordedStepResult =
   | { status: "active"; attempts: number }
   | { status: "replied" }
   | { status: "opted-out" }
+  | { status: "cancelled" }
   | { status: "skipped" }
   | { status: "completed"; cursor: number; nextDueAt: number | null; lastSentAt: number | null };
 
@@ -311,6 +313,7 @@ export interface RunContext {
       requireProfileForCountry: boolean;
       dailyCapPerRecipient: number;
       pinSender?: boolean;
+      quietHoursOverride?: string;
     };
   };
   steps: StepFields[];

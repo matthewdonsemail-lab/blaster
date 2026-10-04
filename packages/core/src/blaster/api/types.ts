@@ -331,6 +331,44 @@ export interface ActivateSequenceResult {
   status: string;
 }
 
+export interface CancelSequenceResult {
+  sequenceId: string;
+  status: string;
+  /** Live enrollments cancelled by this call. */
+  cancelled: number;
+  /** True when more remain; call again. */
+  more: boolean;
+}
+
+export interface EnrollmentActionResult {
+  status: string;
+  /** False when the enrollment was already past the point the action applies to. */
+  changed?: boolean;
+}
+
+/** The campaign as it runs; see `GET /api/sequences/:id/lifecycle`. Numbers are masked. */
+export interface SequenceLifecycle {
+  sequence: { id: string; name: string; status: string; stepCount: number };
+  enrollments: Array<{
+    id: string;
+    to: string | null;
+    status: string;
+    cursor: number;
+    nextDueAt: number | null;
+    lastSentAt: number | null;
+    attempts: number;
+    note: string | null;
+    errorCode: string | null;
+  }>;
+  sends: Array<{ stepIndex: number | null; enrollmentId: string | null; sentAt: number; status: string; telnyxMessageId: string | null }>;
+  report: {
+    enrolled: number;
+    byStatus: Record<string, number>;
+    steps: Array<{ stepIndex: number; sent: number; replied: number; replyRate: number | null }>;
+    truncated: boolean;
+  };
+}
+
 export interface DeleteSequenceResult {
   deleted: boolean;
 }

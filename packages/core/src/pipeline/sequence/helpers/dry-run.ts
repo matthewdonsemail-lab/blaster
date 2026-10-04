@@ -61,6 +61,8 @@ export interface DryRunInput {
   recipient: DryRunRecipient;
   now: number;
   evaluate: EligibilityEvaluator;
+  /** Operator override: do not defer for quiet hours. */
+  ignoreQuietHours?: boolean;
   /** 10DLC compliance and sender readiness snapshot. */
   senderReadiness?: {
     ready: boolean;
@@ -93,7 +95,9 @@ export function dryRunEnrollment(input: DryRunInput): DryRunResult {
     input.recipient.to ?? null,
     input.recipient.stateCode ?? null,
   );
-  const window = quietHoursWindow(timeZone, input.now, approximate);
+  const window = input.ignoreQuietHours
+    ? { timeZone, quiet: false, localHour: 12 as number | null, approximate }
+    : quietHoursWindow(timeZone, input.now, approximate);
 
   const persisted = input.persisted;
   const actor = createActor(createEnrollmentMachine(), {
@@ -107,6 +111,7 @@ export function dryRunEnrollment(input: DryRunInput): DryRunResult {
       country: input.recipient.country ?? null,
       timeZone,
       approximateZone: approximate,
+      ignoreQuietHours: input.ignoreQuietHours === true,
       nextDueAt: persisted?.nextDueAt ?? null,
       lastSentAt: persisted?.lastSentAt ?? null,
       status: persisted?.status ?? "active",

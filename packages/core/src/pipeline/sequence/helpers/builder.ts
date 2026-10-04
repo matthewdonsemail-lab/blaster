@@ -34,6 +34,11 @@ export interface SequenceOptions {
   requireProfileForCountry: boolean;
   /** Ceiling on messages per recipient per day. 0 disables the cap. */
   dailyCapPerRecipient: number;
+  /**
+   * Send inside the recipient's quiet hours. A reason is required and stored; the
+   * default is off. For a test with a consenting recipient, not for campaigns.
+   */
+  quietHoursOverride?: string;
 }
 
 export const DEFAULT_OPTIONS: SequenceOptions = {

@@ -424,6 +424,42 @@ export async function setSequenceStatus(
   });
 }
 
+export async function cancelSequence(sequenceId: string, reason?: string) {
+  return poolCall(async () =>
+    convexClient()!.mutation(api.sequence.mutations.cancelSequence, {
+      sequenceId: sequenceId as Id<"sequences">,
+      ...(reason ? { reason } : {}),
+    }),
+  );
+}
+
+export async function cancelEnrollment(enrollmentId: string, reason?: string) {
+  return poolCall(async () =>
+    convexClient()!.mutation(api.sequence.mutations.cancelEnrollment, {
+      enrollmentId: enrollmentId as Id<"sequenceEnrollments">,
+      ...(reason ? { reason } : {}),
+    }),
+  );
+}
+
+export async function pauseEnrollment(enrollmentId: string) {
+  return poolCall(async () =>
+    convexClient()!.mutation(api.sequence.mutations.pauseEnrollment, { enrollmentId: enrollmentId as Id<"sequenceEnrollments"> }),
+  );
+}
+
+export async function resumeEnrollment(enrollmentId: string) {
+  return poolCall(async () =>
+    convexClient()!.mutation(api.sequence.mutations.resumeEnrollment, { enrollmentId: enrollmentId as Id<"sequenceEnrollments"> }),
+  );
+}
+
+export async function sequenceLifecycle(sequenceId: string) {
+  return poolCall(async () =>
+    convexClient()!.query(api.sequence.queries.sequenceLifecycle, { sequenceId: sequenceId as Id<"sequences"> }),
+  );
+}
+
 export async function getPhoneCompliance(
   phoneNumber: string,
 ): Promise<PoolResult<unknown | null>> {

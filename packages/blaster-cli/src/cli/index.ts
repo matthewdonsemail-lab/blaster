@@ -61,6 +61,7 @@ import { SEND_USAGE, sendMain } from "./send.ts";
 import { SEQUENCE_USAGE, sequenceMain, type SequenceContext } from "./sequence.ts";
 import { POOLS_USAGE, poolsMain } from "./pools.ts";
 import { ACCOUNTS_USAGE, accountsMain, liveClient as accountsLiveClient } from "./accounts.ts";
+import { ENROLLMENTS_USAGE, enrollmentsMain } from "./enrollments.ts";
 import { NUMBERS_USAGE } from "./numbers-usage.ts";
 import { SUPPRESS_USAGE, suppressMain } from "./suppress.ts";
 
@@ -122,6 +123,7 @@ Read and act on the pipeline.
    pool                          Interactive: build a pool, pick numbers, assign it
    suppress list|add|remove      The durable per-person do-not-contact list
    accounts list|add|burn|assign Telnyx accounts, their keys and which numbers they own
+   enrollments cancel|pause|resume  Act on one prospect's place in a campaign
 
 Options
   --json                       Machine-readable output
@@ -169,6 +171,11 @@ const CAPABILITIES = [
   { id: "prospects.batchSend", cli: "", mcp: "", http: "POST /api/messages/batch-send" },
   { id: "suppressions.list", cli: "blaster suppress list", mcp: "blaster_list_suppressions", http: "GET /api/suppressions" },
   { id: "suppressions.set", cli: "blaster suppress add|remove", mcp: "blaster_set_suppression", http: "POST /api/suppressions" },
+  { id: "sequences.cancel", cli: "blaster sequence cancel", mcp: "blaster_cancel_sequence", http: "POST /api/sequences/:id/cancel" },
+  { id: "sequences.lifecycle", cli: "blaster sequence status", mcp: "blaster_sequence_lifecycle", http: "GET /api/sequences/:id/lifecycle" },
+  { id: "enrollments.cancel", cli: "blaster enrollments cancel", mcp: "blaster_cancel_enrollment", http: "POST /api/enrollments/:id/cancel" },
+  { id: "enrollments.pause", cli: "blaster enrollments pause", mcp: "blaster_pause_enrollment", http: "POST /api/enrollments/:id/pause" },
+  { id: "enrollments.resume", cli: "blaster enrollments resume", mcp: "blaster_resume_enrollment", http: "POST /api/enrollments/:id/resume" },
   { id: "numbers.attach", cli: "blaster numbers attach", mcp: "blaster_attach_number", http: "POST /api/numbers/attach" },
   { id: "accounts.list", cli: "blaster accounts list", mcp: "blaster_list_accounts", http: "GET /api/accounts" },
   { id: "accounts.set", cli: "blaster accounts add|burn|disable|activate", mcp: "blaster_set_account", http: "POST /api/accounts" },
@@ -362,6 +369,15 @@ async function main(): Promise<number> {
         return 0;
       }
       return await poolsMain(positional, flags, json);
+    }
+
+    case "enrollments":
+    case "enrollment": {
+      if (positional[0] === "help") {
+        console.log(ENROLLMENTS_USAGE);
+        return 0;
+      }
+      return await enrollmentsMain(positional, flags, json);
     }
 
     case "accounts":
