@@ -142,7 +142,11 @@ export const sequenceTables = {
      */
     doNotContact: v.optional(v.boolean()),
   })
+    // Kept alongside `sequenceRecipient`: reads of one sequence rely on its creation-time order.
+    // eslint-disable-next-line @convex-dev/no-duplicate-indexes
     .index("sequenceId", ["sequenceId"])
+    // One live enrollment per prospect per sequence: enrollment checks this before inserting.
+    .index("sequenceRecipient", ["sequenceId", "recipientId"])
     .index("nextDueAt", ["nextDueAt"])
     // The runner's only queue read: active and already due, in one index range.
     // Status first, then the range, so `dueEnrollments` never scans the table —
