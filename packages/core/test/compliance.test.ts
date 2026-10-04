@@ -122,14 +122,33 @@ describe("checkSenderReadiness", () => {
     expect(checkSenderReadiness(nonUs)).toEqual({ ready: true });
   });
 
-  it("accepts US toll-free numbers with messaging profile without 10DLC registration", () => {
-    const tollFree: CheckSenderReadinessInput = {
-      phoneNumber: "+18005551234",
-      countryCode: "US",
-      numberType: "toll_free",
-      messagingProfileId: "prof-tf-1",
-      now,
-    };
-    expect(checkSenderReadiness(tollFree)).toEqual({ ready: true });
+  const tollFree: CheckSenderReadinessInput = {
+    phoneNumber: "+18005551234",
+    countryCode: "US",
+    numberType: "toll_free",
+    messagingProfileId: "prof-tf-1",
+    now,
+  };
+
+  it("accepts verified or pending US toll-free numbers without 10DLC registration", () => {
+    expect(checkSenderReadiness({ ...tollFree, tollFreeVerification: "verified" })).toEqual({
+      ready: true,
+    });
+    expect(checkSenderReadiness({ ...tollFree, tollFreeVerification: "pending" })).toEqual({
+      ready: true,
+    });
+  });
+
+  it("blocks unverified or unknown toll-free numbers", () => {
+    for (const tollFreeVerification of [undefined, null, "", "unverified", "rejected"]) {
+      const result = checkSenderReadiness({ ...tollFree, tollFreeVerification });
+      expect(result).toMatchObject({ ready: false, reason: "tollfree-unverified" });
+    }
+  });
+
+  it("still requires a messaging profile for toll-free", () => {
+    expect(
+      checkSenderReadiness({ ...tollFree, messagingProfileId: "", tollFreeVerification: "verified" }),
+    ).toMatchObject({ ready: false, reason: "missing-messaging-profile" });
   });
 });
