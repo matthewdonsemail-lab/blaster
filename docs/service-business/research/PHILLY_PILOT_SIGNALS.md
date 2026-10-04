@@ -3,6 +3,15 @@
 Follows `HIRING_SIGNAL_SCOPE.md` and `RESEARCH_RULES.md`. Businesses, roles and
 posting sources only: no named individuals, emails or profile links.
 
+> **Correction (2026-10-04, after `PHILLY_VERIFICATION.md`):** the ten rows below are discovery
+> candidates only. Checked against each company's own careers feed, one is confirmed
+> live (Binsky Home Service, with the cited role seen the same day). Four resolved to a different
+> company with a similar name (Edge Fitness, Union Mill Oral Surgery, Elders Choice, and
+> Gfedaleroof matched nothing), one has no live matching role (Veterans Roofing), three did not
+> confirm the cited role (Delaware Valley Paving, Grand View Roofing, Altera Orthodontics),
+> and one could not be resolved (Honest Roofing). The "fits" column was inference from a
+> job-board snippet. Use `PHILLY_VERIFICATION.md` for what is established.
+
 Method: treg `serpapi.x.google-jobs` ($0.015 per call), 10 queries on
 2026-10-04, location "Philadelphia, Pennsylvania", each query pairing a
 marketing or coordinator title with a service type. About $0.15 total. 2 of 10
