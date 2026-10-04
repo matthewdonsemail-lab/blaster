@@ -394,6 +394,18 @@ export interface SuppressionRow {
   createdAt: number;
 }
 
+/** One Telnyx account, as `/api/accounts` returns it. Never carries the key. */
+export interface TelnyxAccountRow {
+  ref: string;
+  label?: string;
+  status: "active" | "burned" | "disabled";
+  note?: string;
+  /** The Convex env var that must hold this account's API key. */
+  keyEnvName: string;
+  /** Whether the deployment currently has that key set. */
+  keyConfigured: boolean;
+}
+
 /** One prospect's outcome inside an enroll run. Never a bare boolean. */
 export interface EnrollOutcome {
   prospectId: string;

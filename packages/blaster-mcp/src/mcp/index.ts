@@ -370,6 +370,41 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "blaster_list_accounts",
+    description:
+      "List the Telnyx accounts numbers belong to, with status (active, burned, disabled) and whether each account's API key is set. Never returns a key.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "blaster_set_account",
+    description:
+      "Register a Telnyx account, or change its label or status. A burned or disabled account's numbers stop being selected by pools. The API key is set separately as a Convex env var named in the result (keyEnvName).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        ref: { type: "string", description: "Short account reference, e.g. acct-a." },
+        label: { type: "string", description: "Human label." },
+        status: { type: "string", enum: ["active", "burned", "disabled"], description: "New status." },
+        note: { type: "string", description: "Why, recorded with the status." },
+      },
+      required: ["ref"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_assign_number_account",
+    description: "Attach a number to a Telnyx account, or return it to the default account by omitting ref.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        phoneNumber: { type: "string", description: "The number in E.164." },
+        ref: { type: "string", description: "The account ref. Omit for the default account." },
+      },
+      required: ["phoneNumber"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "blaster_enroll_recipients",
     description:
       "Enroll prospects into a sequence straight from Twenty, matching the send filter DSL. Returns a per-prospect outcome (enrolled or skipped with a reason). Requires Twenty and Convex configured.",
@@ -1056,6 +1091,51 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
           text: result.changed
             ? `${args.suppressed ? "Suppressed" : "Lifted the suppression on"} ${result.peer}.`
             : `${result.peer} was already in that state.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_list_accounts": {
+      try {
+        const rows = await blasterApi().listAccounts();
+        return {
+          text: rows.length === 0 ? "No accounts registered; every number uses the default key." : `${rows.length} account(s).`,
+          structured: { count: rows.length, accounts: rows },
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_set_account": {
+      const ref = typeof args.ref === "string" ? args.ref : "";
+      if (!ref) return { text: "ref is required." };
+      try {
+        const result = await blasterApi().setAccount({
+          ref,
+          ...(typeof args.label === "string" ? { label: args.label } : {}),
+          ...(args.status === "active" || args.status === "burned" || args.status === "disabled" ? { status: args.status } : {}),
+          ...(typeof args.note === "string" ? { note: args.note } : {}),
+        });
+        return { text: `${result.ref} is ${result.status}. Key env var: ${result.keyEnvName}.`, structured: result };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_assign_number_account": {
+      const phoneNumber = typeof args.phoneNumber === "string" ? args.phoneNumber : "";
+      if (!phoneNumber) return { text: "phoneNumber is required." };
+      try {
+        const result = await blasterApi().assignNumberAccount({
+          phoneNumber,
+          ...(typeof args.ref === "string" ? { ref: args.ref } : {}),
+        });
+        return {
+          text: result.accountRef ? `${result.phoneNumber} belongs to ${result.accountRef}.` : `${result.phoneNumber} uses the default account.`,
           structured: result,
         };
       } catch (error) {

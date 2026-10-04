@@ -60,6 +60,7 @@ import { readBreakdownFrom, twentyReader } from "./lib/pipeline/breakdown/index.
 import { applyOutboundStatus, conversationMessages, linkConversation, listConversations, recordInboundMessage } from "./lib/convex/index.ts";
 import {
   addPoolNumber,
+  assignNumberAccount,
   commitSequenceDraft,
   createPool,
   createSequence,
@@ -70,6 +71,7 @@ import {
   getPool,
   getSequenceById,
   getSequenceDraft,
+  listAccounts,
   listLedgerNumbers,
   listPools,
   listSequenceDrafts,
@@ -78,6 +80,7 @@ import {
   removePoolNumber,
   reorderPoolNumbers,
   saveSequenceDraft,
+  setAccount,
   setSequencePool,
   setSequenceStatus,
   setSuppression,
@@ -948,6 +951,58 @@ suppressions.post("/suppressions", requireOperator, async (c) => {
 });
 
 app.route("/api", suppressions);
+
+/**
+ * Telnyx accounts: the credentials sender numbers belong to.
+ *
+ * Operator-gated. The key itself is never stored or returned: it is a Convex env
+ * var named by `keyEnvName`, and `keyConfigured` only says whether it is set.
+ * A burned or disabled account takes all of its numbers out of pool selection.
+ */
+const accounts = new Hono();
+const ACCOUNT_STATUSES = new Set(["active", "burned", "disabled"]);
+
+accounts.get("/accounts", requireOperator, async (c) => {
+  const result = await listAccounts();
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to list accounts", detail: result.error }, 502);
+  return c.json({ count: result.value.length, accounts: result.value });
+});
+
+accounts.post("/accounts", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as {
+    ref?: unknown;
+    label?: unknown;
+    status?: unknown;
+    note?: unknown;
+  } | null;
+  if (!body || typeof body.ref !== "string" || body.ref.trim() === "") return c.json({ error: "ref is required" }, 400);
+  if (body.status !== undefined && (typeof body.status !== "string" || !ACCOUNT_STATUSES.has(body.status))) {
+    return c.json({ error: "status must be active, burned or disabled" }, 400);
+  }
+  const result = await setAccount({
+    ref: body.ref.trim(),
+    ...(typeof body.label === "string" ? { label: body.label } : {}),
+    ...(typeof body.status === "string" ? { status: body.status as "active" | "burned" | "disabled" } : {}),
+    ...(typeof body.note === "string" ? { note: body.note } : {}),
+  });
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to update the account", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+accounts.post("/accounts/assign", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { phoneNumber?: unknown; ref?: unknown } | null;
+  if (!body || typeof body.phoneNumber !== "string" || body.phoneNumber.trim() === "") {
+    return c.json({ error: "phoneNumber is required" }, 400);
+  }
+  const result = await assignNumberAccount(body.phoneNumber.trim(), typeof body.ref === "string" ? body.ref : undefined);
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to assign the number", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+app.route("/api", accounts);
 
 /**
  * Enroll prospects into a sequence straight from Twenty.
