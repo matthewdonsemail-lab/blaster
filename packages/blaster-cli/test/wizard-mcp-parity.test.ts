@@ -37,9 +37,9 @@ const pairings: Pairing[] = [
     usage: SEQUENCE_USAGE,
     section: /new \[name\][\s\S]*?(?=\n {2}activate)/,
     tool: "blaster_register_sequence",
-    map: { from: "fromNumber", pool: "poolId", campaign: "campaignId", steps: "steps", name: "name" },
+    map: { from: "fromNumber", pool: "poolId", campaign: "campaignId", steps: "steps", name: "name", "quiet-hours-override": "options" },
     cliOnly: ["activate"],
-    mcpOnly: { numberProfileId: "set with --profile in the CLI body, not in the help block", options: "advanced options object" },
+    mcpOnly: { numberProfileId: "set with --profile in the CLI body, not in the help block" },
   },
   {
     command: "blaster pools create",

@@ -68,6 +68,8 @@ interface EnrollmentContext {
   country: string | null;
   timeZone: string | null;
   approximateZone: boolean;
+  /** Operator override: send inside quiet hours. Only set with a recorded reason. */
+  ignoreQuietHours: boolean;
   nextDueAt: number | null;
   lastSentAt: number | null;
   status: EnrollmentStatus;
@@ -131,7 +133,9 @@ export function createEnrollmentMachine() {
           sentInLastDay: context.sentInLastDay,
           numberProfileId: context.numberProfileId ?? null,
         });
-        const window = quietHoursWindow(context.timeZone, context.now, context.approximateZone);
+        const window = context.ignoreQuietHours
+          ? { quiet: false, localHour: 12 as number | null }
+          : quietHoursWindow(context.timeZone, context.now, context.approximateZone);
         return {
           verdict: {
             eligible: verdict.eligible,
@@ -338,6 +342,7 @@ export function createEnrollmentMachine() {
       country: input.country,
       timeZone: input.timeZone,
       approximateZone: input.approximateZone,
+      ignoreQuietHours: input.ignoreQuietHours === true,
       nextDueAt: input.nextDueAt,
       lastSentAt: input.lastSentAt,
       status: input.status,

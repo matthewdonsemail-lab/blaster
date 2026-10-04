@@ -484,6 +484,64 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     },
   },
   {
+    name: "blaster_cancel_sequence",
+    description:
+      "Cancel a campaign for good: the sequence stops and every live enrollment is cancelled. A message already in flight still lands. Use blaster_pause_enrollment to stop one prospect temporarily.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sequenceId: { type: "string", description: "The Convex sequence id." },
+        reason: { type: "string", description: "Why, recorded on each cancelled enrollment." },
+      },
+      required: ["sequenceId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_cancel_enrollment",
+    description: "Cancel one prospect's enrollment for good. It cannot be resumed; the prospect can be enrolled again.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enrollmentId: { type: "string", description: "The enrollment id." },
+        reason: { type: "string", description: "Why, recorded on the enrollment." },
+      },
+      required: ["enrollmentId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_pause_enrollment",
+    description: "Pause one prospect's enrollment, keeping its place so it can be resumed.",
+    inputSchema: {
+      type: "object",
+      properties: { enrollmentId: { type: "string", description: "The enrollment id." } },
+      required: ["enrollmentId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_resume_enrollment",
+    description: "Resume a paused enrollment; its next step is due now.",
+    inputSchema: {
+      type: "object",
+      properties: { enrollmentId: { type: "string", description: "The enrollment id." } },
+      required: ["enrollmentId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_sequence_lifecycle",
+    description:
+      "Watch a campaign run: the sequence status, each prospect's position and next due time (numbers masked to the last four digits), every send in time order, and per-step sends and replies.",
+    inputSchema: {
+      type: "object",
+      properties: { sequenceId: { type: "string", description: "The Convex sequence id." } },
+      required: ["sequenceId"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "blaster_activate_sequence",
     description:
       "Activate a sequence in Convex so enrollments can be processed and sent. Sequence must have at least one step and an active pool or valid sender.",
@@ -1259,6 +1317,56 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
         return {
           text: `Created sequence "${name}" (${result.sequenceId}) in draft state with ${result.stepCount} step(s).`,
           structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_cancel_sequence": {
+      const sequenceId = typeof args.sequenceId === "string" ? args.sequenceId : "";
+      if (!sequenceId) return { text: "sequenceId is required." };
+      try {
+        const result = await blasterApi().cancelSequence(sequenceId, typeof args.reason === "string" ? args.reason : undefined);
+        return {
+          text: `Sequence ${result.sequenceId} cancelled; ${result.cancelled} enrollment(s) stopped${result.more ? " (more remain, call again)" : ""}.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_cancel_enrollment":
+    case "blaster_pause_enrollment":
+    case "blaster_resume_enrollment": {
+      const enrollmentId = typeof args.enrollmentId === "string" ? args.enrollmentId : "";
+      if (!enrollmentId) return { text: "enrollmentId is required." };
+      try {
+        const api = blasterApi();
+        const result =
+          name === "blaster_cancel_enrollment"
+            ? await api.cancelEnrollment(enrollmentId, typeof args.reason === "string" ? args.reason : undefined)
+            : name === "blaster_pause_enrollment"
+              ? await api.pauseEnrollment(enrollmentId)
+              : await api.resumeEnrollment(enrollmentId);
+        return {
+          text: result.changed === false ? `Nothing changed: the enrollment is ${result.status}.` : `Enrollment is now ${result.status}.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_sequence_lifecycle": {
+      const sequenceId = typeof args.sequenceId === "string" ? args.sequenceId : "";
+      if (!sequenceId) return { text: "sequenceId is required." };
+      try {
+        const view = await blasterApi().sequenceLifecycle(sequenceId);
+        return {
+          text: `${view.sequence.name}: ${view.sequence.status}; ${view.report.enrolled} enrolled, ${view.sends.length} sent.`,
+          structured: view,
         };
       } catch (error) {
         return { text: describeApiError(error) };

@@ -9,7 +9,7 @@ import { stepFieldsValidator } from "./types.js";
 // Aliased: the query below is addressed as `loadRunContext`, so importing the
 // helper under the same name would shadow it and recurse into itself.
 import { dueEnrollmentIds, loadRunContext as readRunContext } from "./helpers.js";
-import { readSequenceReport } from "./report.js";
+import { readSequenceLifecycle, readSequenceReport } from "./report.js";
 import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT, clamp } from "./utils.js";
 
 /**
@@ -103,6 +103,12 @@ export const listEnrollments = query({
 export const sequenceReport = query({
   args: { sequenceId: v.id("sequences") },
   handler: async (ctx, args) => readSequenceReport(ctx, args.sequenceId),
+});
+
+/** The campaign as it runs: state, each prospect's position, and each send in time order. */
+export const sequenceLifecycle = query({
+  args: { sequenceId: v.id("sequences") },
+  handler: async (ctx, args) => readSequenceLifecycle(ctx, args.sequenceId),
 });
 
 /** Enrollments whose next step is due.

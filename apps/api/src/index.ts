@@ -62,6 +62,8 @@ import {
   addPoolNumber,
   assignNumberAccount,
   attachNumber,
+  cancelEnrollment,
+  cancelSequence,
   commitSequenceDraft,
   createPool,
   createSequence,
@@ -78,9 +80,12 @@ import {
   listSequenceDrafts,
   listSequences,
   listSuppressions,
+  pauseEnrollment,
   removePoolNumber,
   reorderPoolNumbers,
+  resumeEnrollment,
   saveSequenceDraft,
+  sequenceLifecycle,
   setAccount,
   setSequencePool,
   setSequenceStatus,
@@ -783,6 +788,40 @@ pools.post("/sequences/:id/activate", requireOperator, async (c) => {
   if (result.status === "failed") return c.json({ error: "Failed to activate sequence", detail: result.error }, 502);
   return c.json(result.value);
 });
+
+/** Cancel a campaign: the sequence stops and every live enrollment is cancelled, for good. */
+pools.post("/sequences/:id/cancel", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { reason?: unknown } | null;
+  const result = await cancelSequence(c.req.param("id"), typeof body?.reason === "string" ? body.reason : undefined);
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to cancel the sequence", detail: result.error }, 502);
+  return c.json(result.value);
+});
+
+/** A campaign as it runs: state, each prospect's position (numbers masked), and sends in time order. */
+pools.get("/sequences/:id/lifecycle", requireOperator, async (c) => {
+  const result = await sequenceLifecycle(c.req.param("id"));
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to read the sequence", detail: result.error }, 502);
+  if (result.value === null) return c.json({ error: "Unknown sequence" }, 404);
+  return c.json(result.value);
+});
+
+/** One prospect's enrollment: cancel (for good), pause, or resume. */
+const enrollmentAction = (
+  action: "cancel" | "pause" | "resume",
+  run: (id: string, reason?: string) => Promise<{ status: string; value?: unknown; error?: string }>,
+) => async (c: Context) => {
+  const body = action === "cancel" ? ((await c.req.json().catch(() => null)) as { reason?: unknown } | null) : null;
+  const result = await run(c.req.param("id") ?? "", typeof body?.reason === "string" ? body.reason : undefined);
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: `Failed to ${action} the enrollment`, detail: result.error }, 502);
+  return c.json(result.value);
+};
+
+pools.post("/enrollments/:id/cancel", requireOperator, enrollmentAction("cancel", (id, reason) => cancelEnrollment(id, reason)));
+pools.post("/enrollments/:id/pause", requireOperator, enrollmentAction("pause", (id) => pauseEnrollment(id)));
+pools.post("/enrollments/:id/resume", requireOperator, enrollmentAction("resume", (id) => resumeEnrollment(id)));
 
 /**
  * Get 10DLC compliance and carrier readiness snapshot for a phone number.

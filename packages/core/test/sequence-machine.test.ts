@@ -277,6 +277,18 @@ describe("stop conditions win from anywhere", () => {
 });
 
 describe("quiet hours", () => {
+  test("the operator override sends inside quiet hours, and the default still defers", async () => {
+    const at3am = Date.UTC(2026, 2, 2, 8, 0, 0);
+    const allowed = nextAllowedSendAt("America/New_York", at3am);
+    const base = { timeZone: "America/New_York", nextAllowedSendAt: () => allowed };
+
+    const deferred = await run(base, { type: "TICK", at: at3am });
+    expect(stateOf(deferred)).toBe("scheduled");
+
+    const overridden = await run({ ...base, ignoreQuietHours: true }, { type: "TICK", at: at3am });
+    expect(stateOf(overridden)).toBe("claiming");
+  });
+
   test("a due step inside quiet hours is pushed to the next allowed instant", async () => {
     // 03:00 Eastern is outside the 08:00-21:00 window.
     const at3am = Date.UTC(2026, 2, 2, 8, 0, 0);

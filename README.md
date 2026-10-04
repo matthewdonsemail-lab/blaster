@@ -113,6 +113,9 @@ blaster pools add-number --pool <id> --number +353871234567
 blaster pools assign --sequence <seq-id> --pool <id>
 blaster suppress list
 blaster accounts list
+blaster sequence status <sequence-id>      # watch a campaign: state, each prospect's place, every send
+blaster sequence cancel <sequence-id>      # stop a campaign for good
+blaster enrollments cancel|pause|resume <enrollment-id>
 blaster accounts add acct-a --label "Main"
 blaster suppress add --peer +353871234567 --reason "inbound STOP"
 blaster login
@@ -155,7 +158,9 @@ MCP tools: `blaster_breakdown`, `blaster_env`, `blaster_messaging_profile`,
 `blaster_reorder_pool`, `blaster_set_sequence_pool`,
 `blaster_enroll_recipients`, `blaster_list_suppressions`,
 `blaster_set_suppression`, `blaster_attach_number`, `blaster_list_accounts`,
-`blaster_set_account`, `blaster_assign_number_account`.
+`blaster_set_account`, `blaster_assign_number_account`, `blaster_cancel_sequence`,
+`blaster_cancel_enrollment`, `blaster_pause_enrollment`, `blaster_resume_enrollment`,
+`blaster_sequence_lifecycle`.
 
 ## What is inside
 

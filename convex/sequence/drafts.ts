@@ -15,6 +15,7 @@ export const draftOptionsValidator = v.object({
   requireProfileForCountry: v.optional(v.boolean()),
   dailyCapPerRecipient: v.optional(v.number()),
   pinSender: v.optional(v.boolean()),
+  quietHoursOverride: v.optional(v.string()),
 });
 
 /**

@@ -7,6 +7,7 @@ import {
 } from "../../packages/core/src/pipeline/sequence/index";
 import { applySentOutcome, draftFromArgs } from "./model.js";
 import { claimSendCapacity as claimCapacity, type SendCapacity } from "../rateLimit.js";
+import { recordOutboundRow } from "../conversations/model.js";
 import { enrollArgsValidator, enrollRecipient } from "./enrollment.js";
 import {
   applyScheduleArgsValidator,
@@ -43,6 +44,7 @@ export const createSequence = mutation({
         requireProfileForCountry: v.boolean(),
         dailyCapPerRecipient: v.number(),
         pinSender: v.optional(v.boolean()),
+        quietHoursOverride: v.optional(v.string()),
       }),
     ),
     steps: v.array(stepFieldsValidator),
@@ -162,6 +164,58 @@ export const pauseEnrollment = mutation({
   },
 });
 
+/** Enrollment states that still own the prospect, so a cancel has something to stop. */
+const CANCELLABLE = new Set(["active", "paused", "ambiguous", "awaiting-human"]);
+
+/**
+ * Stop one prospect for good. Unlike pause it cannot be resumed and it frees the
+ * prospect to be enrolled again. A message already in flight still lands and is
+ * recorded, but nothing further is sent.
+ */
+export const cancelEnrollment = mutation({
+  args: { enrollmentId: v.id("sequenceEnrollments"), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const enrollment = await ctx.db.get("sequenceEnrollments", args.enrollmentId);
+    if (!enrollment) throw new Error(`unknown enrollment ${args.enrollmentId}`);
+    if (!CANCELLABLE.has(enrollment.status)) return { status: enrollment.status, changed: false };
+    await ctx.db.patch("sequenceEnrollments", args.enrollmentId, {
+      status: "cancelled",
+      nextDueAt: undefined,
+      lastSkipReason: args.reason ? `cancelled: ${args.reason}` : "cancelled",
+    });
+    return { status: "cancelled" as const, changed: true };
+  },
+});
+
+/**
+ * Cancel a whole campaign: the sequence stops (the runner skips anything that is
+ * not active) and every live enrollment is cancelled. Bounded per call; `more`
+ * says whether to call again.
+ */
+export const cancelSequence = mutation({
+  args: { sequenceId: v.id("sequences"), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const sequence = await ctx.db.get("sequences", args.sequenceId);
+    if (!sequence) throw new Error(`unknown sequence ${args.sequenceId}`);
+    if (sequence.status !== "completed") await ctx.db.patch("sequences", args.sequenceId, { status: "completed" });
+    const rows = await ctx.db
+      .query("sequenceEnrollments")
+      .withIndex("sequenceId", (q) => q.eq("sequenceId", args.sequenceId))
+      .take(500);
+    let cancelled = 0;
+    for (const row of rows) {
+      if (!CANCELLABLE.has(row.status)) continue;
+      await ctx.db.patch("sequenceEnrollments", row._id, {
+        status: "cancelled",
+        nextDueAt: undefined,
+        lastSkipReason: args.reason ? `cancelled: ${args.reason}` : "cancelled",
+      });
+      cancelled += 1;
+    }
+    return { sequenceId: args.sequenceId, status: "completed" as const, cancelled, more: rows.length === 500 };
+  },
+});
+
 /** Put a paused enrollment back in the queue, due now. */
 export const resumeEnrollment = mutation({
   args: { enrollmentId: v.id("sequenceEnrollments") },
@@ -261,6 +315,20 @@ export const recordStep = internalMutation({
   handler: async (ctx, args): Promise<RecordedStepResult> => {
     const enrollment = await ctx.db.get("sequenceEnrollments", args.enrollmentId);
     if (!enrollment) throw new Error(`unknown enrollment ${args.enrollmentId}`);
+
+    // Cancelled while a send was in flight: that message did go out, so it is still
+    // recorded, but nothing may move the enrollment out of "cancelled".
+    if (enrollment.status === "cancelled") {
+      if (args.outcome === "sent" && args.message) {
+        await recordOutboundRow(ctx, {
+          ...args.message,
+          sequenceId: enrollment.sequenceId,
+          enrollmentId: enrollment._id,
+          stepIndex: enrollment.cursor,
+        });
+      }
+      return { status: "cancelled" as const };
+    }
 
     if (args.outcome === "ambiguous") {
       // The send may or may not have gone out, so the enrollment is parked with
@@ -413,6 +481,7 @@ export const updateSequence = mutation({
         requireProfileForCountry: v.optional(v.boolean()),
         dailyCapPerRecipient: v.optional(v.number()),
         pinSender: v.optional(v.boolean()),
+        quietHoursOverride: v.optional(v.string()),
       }),
     ),
     steps: v.optional(

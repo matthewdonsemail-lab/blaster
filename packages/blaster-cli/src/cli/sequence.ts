@@ -20,6 +20,7 @@ import {
   type SendingNumber,
   type SequenceDraft,
   type SequenceDraftRecord,
+  type SequenceLifecycle,
   type SequenceOption,
   type SequenceStepDraft,
 } from "@blaster/core";
@@ -53,8 +54,12 @@ export const SEQUENCE_USAGE = `Usage: blaster sequence <action> [name]
 
   new [name]     Build a sequence interactively with Convex draft checkpointing
                  Flags: --from <number>, --pool <id>, --campaign <id>, --activate,
+                 --quiet-hours-override <reason> (send inside quiet hours; for a consenting test recipient),
                  --steps '[{"text":"hi","delay":"0"},{"text":"again","delay":"30s"}]'
   activate <id>  Activate a sequence in Convex for sending
+  cancel <id> [--reason <text>]
+                 Cancel a campaign for good: stop it and every live enrollment
+  status <id>    Watch a campaign run: its state, each prospect's place, and every send in order
   list           List sequences and unfinished drafts in Convex
   show <name>    The steps, plus a per-recipient plan
   edit <name>    Change the first message
@@ -444,7 +449,12 @@ async function newDraft(ctx: SequenceContext): Promise<number> {
     poolId,
     campaignId,
     numberProfileId,
-    options: { ...DEFAULT_OPTIONS },
+    options: {
+      ...DEFAULT_OPTIONS,
+      ...(typeof ctx.flags.get("quiet-hours-override") === "string" && ctx.flags.get("quiet-hours-override") !== ""
+        ? { quietHoursOverride: ctx.flags.get("quiet-hours-override") as string }
+        : {}),
+    },
     steps,
   };
   const problems = validateDraft(draft);
@@ -781,6 +791,52 @@ export async function sequenceMenu(ctx: SequenceContext): Promise<number> {
   }
 }
 
+/** `sequence activate|cancel|status <id>`: act on a sequence that already exists in Convex. */
+async function sequenceOps(ctx: SequenceContext, action: "activate" | "cancel" | "status", id: string | undefined): Promise<number> {
+  if (!id) {
+    console.error(`blaster sequence ${action}: a sequence id is required\n${SEQUENCE_USAGE}`);
+    return 1;
+  }
+  const live = await liveClient(ctx);
+  if (typeof live === "number") return live;
+  try {
+    if (action === "activate") {
+      const result = await live.client.activateSequence(id);
+      console.log(ctx.json ? ctx.jsonOut(result) : `Sequence ${result.sequenceId} is now ${result.status}.`);
+      return 0;
+    }
+    if (action === "cancel") {
+      const reason = typeof ctx.flags.get("reason") === "string" ? (ctx.flags.get("reason") as string) : undefined;
+      const result = await live.client.cancelSequence(id, reason);
+      console.log(ctx.json ? ctx.jsonOut(result) : `Sequence ${result.sequenceId} cancelled; ${result.cancelled} enrollment(s) stopped${result.more ? " (more remain, run again)" : ""}.`);
+      return 0;
+    }
+    const view = await live.client.sequenceLifecycle(id);
+    console.log(ctx.json ? ctx.jsonOut(view) : formatLifecycle(view, ctx.now()));
+    return 0;
+  } catch (error) {
+    console.error(`blaster sequence ${action}: ${error instanceof Error ? error.message : String(error)}`);
+    return 1;
+  }
+}
+
+const clock = (at: number | null): string => (at === null ? "-" : new Date(at).toISOString().slice(11, 19) + "Z");
+
+/** A campaign run as text: where each prospect is, when the next step is due, and each send in order. */
+export function formatLifecycle(view: SequenceLifecycle, now: number): string {
+  const lines = [`${view.sequence.name} [${view.sequence.status}]  steps=${view.sequence.stepCount}  enrolled=${view.report.enrolled}  sent=${view.sends.length}`];
+  for (const row of view.enrollments) {
+    const next = row.nextDueAt === null ? "" : `  next ${clock(row.nextDueAt)} (${Math.round((row.nextDueAt - now) / 1000)}s)`;
+    lines.push(`  ${row.id}  ${row.to ?? "-"}  ${row.status}  step ${row.cursor}/${view.sequence.stepCount}${next}${row.note ? `  ${row.note}` : ""}${row.errorCode ? `  code ${row.errorCode}` : ""}`);
+  }
+  if (view.sends.length > 0) lines.push("sends:");
+  for (const send of view.sends) lines.push(`  ${clock(send.sentAt)}  step ${send.stepIndex === null ? "-" : send.stepIndex + 1}  ${send.status}${send.telnyxMessageId ? `  ${send.telnyxMessageId}` : ""}`);
+  for (const step of view.report.steps) {
+    lines.push(`step ${step.stepIndex + 1}: sent ${step.sent}, replied ${step.replied}${step.replyRate === null ? "" : ` (${Math.round(step.replyRate * 100)}%)`}`);
+  }
+  return lines.join("\n");
+}
+
 export async function sequenceMain(
   ctx: SequenceContext,
   action: string | undefined,
@@ -803,6 +859,10 @@ export async function sequenceMain(
     case "rm":
     case "delete":
       return await removeDraft(ctx, name);
+    case "activate":
+    case "cancel":
+    case "status":
+      return await sequenceOps(ctx, action, name);
     case undefined:
       if (!isInteractive(ctx.json)) {
         console.log(SEQUENCE_USAGE);
