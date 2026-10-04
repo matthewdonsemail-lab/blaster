@@ -22,6 +22,7 @@ export type SenderReadinessReason =
   | "provisioning-pending"
   | "snapshot-stale"
   | "tollfree-unverified"
+  | "account-unavailable"
   | "unsupported-jurisdiction";
 
 export type SenderReadiness =

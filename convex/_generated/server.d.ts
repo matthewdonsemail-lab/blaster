@@ -1,10 +1,11 @@
 /* eslint-disable */
 /**
- * Generated utilities for implementing server-side Convex query and mutation functions.
+ * Generated utilities for implementing server-side Convex query and mutation
+ * functions.
  *
  * THIS CODE IS AUTOMATICALLY GENERATED.
  *
- * To regenerate, run `npx convex dev`.
+ * To regenerate, run `node scripts/convex-codegen.mjs`.
  * @module
  */
 
@@ -24,15 +25,15 @@ import type { DataModel } from "./dataModel.js";
 /**
  * Typesafe environment variables.
  *
- * This includes platform-provided env vars and any variables declared in
- * `convex.config.ts`.
+ * This includes platform-provided env vars and any variables read by the
+ * convex/ tree (see the script; TELNYX_* are required, the rest optional).
  */
 type Env = {
   readonly CONVEX_CLOUD_URL: string;
   readonly CONVEX_SITE_URL: string;
   readonly TELNYX_API_KEY: string;
-  readonly TWENTY_API_KEY: string | undefined;
-  readonly TWENTY_BASE_URL: string | undefined;
+  readonly TWENTY_API_KEY?: string;
+  readonly TWENTY_BASE_URL?: string;
 };
 
 /**
@@ -112,8 +113,8 @@ export declare const httpAction: HttpActionBuilder;
 /**
  * Typesafe environment variables.
  *
- * This includes platform-provided env vars and any variables declared in
- * `convex.config.ts`.
+ * This includes platform-provided env vars and any variables read by the
+ * convex/ tree.
  */
 export declare const env: Env;
 
@@ -148,7 +149,7 @@ export type ActionCtx = GenericActionCtx<DataModel>;
  * An interface to read from the database within Convex query functions.
  *
  * The two entry points are {@link DatabaseReader.get}, which fetches a single
- * document by its {@link Id}, or {@link DatabaseReader.query}, which starts
+ * document by its {@link Id}, and {@link DatabaseReader.query}, which starts
  * building a query.
  */
 export type DatabaseReader = GenericDatabaseReader<DataModel>;

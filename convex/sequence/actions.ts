@@ -1,6 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
+import { resolveAccountKey } from "../telnyxAccounts/model.js";
 import { checkDocReadiness } from "../phoneNumbers/compliance.js";
 // Aliased: `profileEnv` below builds the Telnyx SDK's own env record and this
 // handler holds it in a local `env`, which would otherwise shadow the Convex
@@ -235,7 +236,24 @@ export const runEnrollmentStep = internalAction({
     // even though `convexEnv.TELNYX_API_KEY` is declared required: parking the
     // enrollment with a readable reason beats throwing an opaque error out of
     // the runner if the deployment is ever provisioned without it.
-    const apiKey = convexEnv.TELNYX_API_KEY;
+    //
+    // The key belongs to the account that owns the sending number. A number with no
+    // account uses the default key, so numbers that predate accounts are unchanged.
+    const senderDoc = await ctx.runQuery(internal.phoneNumbers.queries.getPhoneNumberDoc, {
+      phoneNumber: fromNumber,
+    });
+    const accountRef = senderDoc?.accountRef;
+    const account = await ctx.runQuery(internal.telnyxAccounts.queries.usability, { ref: accountRef });
+    if (!account.usable) {
+      await ctx.runMutation(internal.sequence.mutations.applySchedule, {
+        enrollmentId: enrollment._id,
+        status: "awaiting-human",
+        lastSkipReason: `sender-${account.reason}`,
+        attempts: enrollment.attempts ?? 0,
+      });
+      return { kind: "sentinel", reason: `sender-${account.reason}` };
+    }
+    const apiKey = resolveAccountKey(convexEnv, accountRef);
     if (!apiKey) {
       // Nothing was sent, so this is a definite failure rather than an unknown
       // outcome: it parks after the retry ceiling instead of being guessed at.
@@ -244,7 +262,7 @@ export const runEnrollmentStep = internalAction({
         enrollmentId: enrollment._id,
         outcome: "failed",
         steps,
-        skipReason: "missing-telnyx-api-key",
+        skipReason: accountRef ? `missing-telnyx-api-key:${accountRef}` : "missing-telnyx-api-key",
       });
       return { kind: "failed", retryable: false, reason: "missing-telnyx-api-key" };
     }
