@@ -1,7 +1,7 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-04T04:29:36Z
+updated: 2026-10-04T04:35:33Z
 commit: feat: transition to Convex-only sequence draft and resume lifecycle with atomic pool creation
 -->
 
