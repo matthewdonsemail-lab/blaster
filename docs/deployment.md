@@ -14,7 +14,12 @@ Convex functions deploy separately with `pnpm convex:deploy`.
 
 ## What is actually serving today (checked 2026-10-04)
 
-The hosted API at `blaster-web-nine.vercel.app` is the **Vercel** project
+The only documented entry point is **`https://blaster.listeningkit.com`** (an `A` record in the
+Cloudflare zone for `listeningkit.com`, DNS only, pointing at Vercel and attached to the project as a
+custom domain). It serves the API and the MCP endpoint (`/mcp`). The older
+`blaster-web-nine.vercel.app` hostname still answers but is not to be documented or shared; `blaster login`
+still defaults to it because the Twenty OAuth redirect URI is registered against it, and moving login means
+registering a new redirect URI first. The hosted API is the **Vercel** project
 `blaster-web`, deployed on every push to `main` of the GitHub repo
 (`matthewdonsemail-lab/blaster`; see the repo's Deployments). So `vercel.json`
 and `scripts/build-api-function.mjs` are live, not legacy: a route that needs a

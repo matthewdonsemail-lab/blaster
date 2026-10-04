@@ -130,6 +130,21 @@ blaster login
 }
 ```
 
+### Hosted MCP (the one entry point)
+
+`https://blaster.listeningkit.com/mcp` serves every tool below over Streamable HTTP,
+authenticated with your operator token (`blaster login`, then the token in
+`.blaster/sessions.json`; never share or commit it). Each call runs as you.
+
+```
+claude mcp add --transport http blaster https://blaster.listeningkit.com/mcp \
+  --header "Authorization: Bearer <operator token>"
+```
+
+ChatGPT and claude.ai connectors are not supported yet (they need an OAuth
+authorization server with dynamic client registration; see
+`docs/production-readiness.md`). The stdio server above is for local use.
+
 MCP tools: `blaster_breakdown`, `blaster_env`, `blaster_messaging_profile`,
 `blaster_send_message`, `blaster_list_records`, `blaster_search_numbers`,
 `blaster_purchase_number`, `blaster_list_numbers`, `blaster_sync_phones`,
