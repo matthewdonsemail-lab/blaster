@@ -13,7 +13,8 @@
  * Telnyx configured, and says so rather than failing obscurely.
  */
 
-import { Server } from "@modelcontextprotocol/server";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { Server, createMcpHandler } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { pathToFileURL } from "node:url";
 import {
@@ -612,7 +613,21 @@ interface ToolResult {
  * `createBlasterApiClient` as the CLI, which is what makes the two surfaces
  * return identical payloads rather than merely similar ones.
  */
+/**
+ * The API client for the request being served. Over stdio the client is built
+ * from the local `.blaster/` session; when the server is hosted, each request
+ * runs inside `withApiClient` with a client carrying that caller's own token, so
+ * a hosted tool acts as the person who called it and never as the host.
+ */
+const apiScope = new AsyncLocalStorage<BlasterApiClient>();
+
+export function withApiClient<T>(client: BlasterApiClient, run: () => T): T {
+  return apiScope.run(client, run);
+}
+
 function blasterApi(): BlasterApiClient {
+  const scoped = apiScope.getStore();
+  if (scoped) return scoped;
   const home = loadSessionHome(process.cwd());
   const apiUrl = home.config.apiUrl ?? Object.keys(home.sessions)[0] ?? null;
   if (!apiUrl) {
@@ -1421,6 +1436,16 @@ export function createServer(): Server {
   });
 
   return server;
+}
+
+/**
+ * A web-standard handler serving the same tools over Streamable HTTP, stateless:
+ * every request builds its own server, so it runs on serverless hosts. Mount it
+ * behind an authentication gate and wrap the call in `withApiClient`; see
+ * apps/api's `/mcp` route.
+ */
+export function createHostedMcpHandler(): { fetch: (request: Request) => Promise<Response> } {
+  return createMcpHandler(() => createServer());
 }
 
 export async function startServer(): Promise<void> {
