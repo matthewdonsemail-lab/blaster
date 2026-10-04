@@ -12,12 +12,23 @@ through the platform rather than carrying a long-lived API key.
 
 Convex functions deploy separately with `pnpm convex:deploy`.
 
-## `vercel.json` is legacy
+## What is actually serving today (checked 2026-10-04)
 
-`vercel.json` and `scripts/build-api-function.mjs` remain from the Vercel era.
-They are not used by the Railcode build; delete them together when the last
-Vercel deployment is retired. Do not commit `api/_bundle.js` or the Vercel
-function shim — the Railcode platform does its own bundling.
+The hosted API at `blaster-web-nine.vercel.app` is the **Vercel** project
+`blaster-web`, deployed on every push to `main` of the GitHub repo
+(`matthewdonsemail-lab/blaster`; see the repo's Deployments). So `vercel.json`
+and `scripts/build-api-function.mjs` are live, not legacy: a route that needs a
+public path must be listed in `vercel.json` `rewrites`, or Vercel serves the
+single-page app for it (a POST to `/mcp` returned 405 until it was added).
+The Railcode build described above is the intended target; until it replaces
+Vercel, treat `vercel.json` as the source of truth for what is reachable.
+
+Convex is hosted only. "Dev" and "production" are not local versus remote; they
+are which deployment URL and which environment variables a process is given.
+Today the hosted API, the CLI session and the runner all use one deployment,
+`bold-caribou-638`, so there is one body of data. Env is set on it with
+`npx convex env set` (unset `CONVEX_SELF_HOSTED_URL` and
+`CONVEX_SELF_HOSTED_ADMIN_KEY` for that command if they are exported).
 
 ## Failure modes
 
