@@ -61,6 +61,7 @@ import { applyOutboundStatus, conversationMessages, linkConversation, listConver
 import {
   addPoolNumber,
   assignNumberAccount,
+  attachNumber,
   commitSequenceDraft,
   createPool,
   createSequence,
@@ -1408,6 +1409,8 @@ app.post("/api/numbers/purchase", requireOperator, async (c) => {
     messagingProfileId?: string;
     customerReference?: string;
     syncToTwenty?: boolean;
+    stateCode?: string;
+    poolId?: string;
   } | null;
   const numbers = body?.phoneNumbers ?? (body?.phoneNumber ? [body.phoneNumber] : []);
   if (!numbers || numbers.length === 0) {
@@ -1445,10 +1448,58 @@ app.post("/api/numbers/purchase", requireOperator, async (c) => {
         twenty.push(record);
       }
     }
-    return c.json({ order, twenty, syncedToTwenty: twenty.length });
+    // Record the purchase in the Convex ledger and attach it, so a bought number is
+    // never assumed to be sendable: the result says what it still needs.
+    const attached: Array<unknown> = [];
+    for (const purchased of order.phoneNumbers) {
+      const result = await attachNumber({
+        phoneNumber: purchased.phoneNumber,
+        ...(order.messagingProfileId ?? body?.messagingProfileId
+          ? { messagingProfileId: (order.messagingProfileId ?? body?.messagingProfileId) as string }
+          : {}),
+        ...(purchased.countryCode ? { countryCode: purchased.countryCode } : {}),
+        ...(purchased.numberType ? { numberType: purchased.numberType } : {}),
+        ...(purchased.id ? { telnyxNumberId: purchased.id } : {}),
+        ...(order.id ? { orderId: order.id } : {}),
+        ...(typeof body?.stateCode === "string" ? { stateCode: body.stateCode } : {}),
+        ...(typeof body?.poolId === "string" ? { poolId: body.poolId } : {}),
+      });
+      attached.push(
+        result.status === "ok"
+          ? result.value
+          : { phoneNumber: purchased.phoneNumber, error: result.status === "failed" ? result.error : "convex not configured" },
+      );
+    }
+    return c.json({ order, twenty, syncedToTwenty: twenty.length, attached });
   } catch (error) {
     return fail(c, error, "Failed to purchase phone numbers", 502);
   }
+});
+
+/**
+ * Attach a number (just bought, or already owned) to its Telnyx account, state,
+ * profile and pool, and report what it still needs before it can send.
+ */
+app.post("/api/numbers/attach", requireOperator, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body || typeof body.phoneNumber !== "string" || body.phoneNumber.trim() === "") {
+    return c.json({ error: "phoneNumber is required" }, 400);
+  }
+  const text = (key: string) => (typeof body[key] === "string" && body[key] !== "" ? { [key]: body[key] as string } : {});
+  const result = await attachNumber({
+    phoneNumber: body.phoneNumber.trim(),
+    ...text("accountRef"),
+    ...text("stateCode"),
+    ...text("messagingProfileId"),
+    ...text("countryCode"),
+    ...text("numberType"),
+    ...text("telnyxNumberId"),
+    ...text("orderId"),
+    ...text("poolId"),
+  });
+  if (result.status === "not-configured") return c.json({ error: "CONVEX_URL is not configured" }, 503);
+  if (result.status === "failed") return c.json({ error: "Failed to attach the number", detail: result.error }, 502);
+  return c.json(result.value);
 });
 
 /** Numbers already owned on the Telnyx account, with messaging bindings. */

@@ -414,6 +414,29 @@ export interface TelnyxAccountRow {
   keyConfigured: boolean;
 }
 
+/** What `attachNumber` takes: everything that lets a number send. */
+export interface AttachNumberInput {
+  phoneNumber: string;
+  accountRef?: string;
+  stateCode?: string;
+  messagingProfileId?: string;
+  countryCode?: string;
+  numberType?: string;
+  telnyxNumberId?: string;
+  orderId?: string;
+  poolId?: string;
+}
+
+/** What is still missing before the number can send; `needs` is empty when it can. */
+export interface AttachNumberResult {
+  phoneNumber: string;
+  accountRef: string | null;
+  stateCode: string | null;
+  poolId: string | null;
+  sendable: boolean;
+  needs: string[];
+}
+
 /** One prospect's outcome inside an enroll run. Never a bare boolean. */
 export interface EnrollOutcome {
   prospectId: string;

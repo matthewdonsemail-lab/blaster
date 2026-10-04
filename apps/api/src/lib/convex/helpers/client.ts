@@ -589,6 +589,36 @@ export async function listSuppressions(): Promise<ReadResult<SuppressionRow>> {
   }
 }
 
+export interface AttachNumberResultRow {
+  phoneNumber: string;
+  accountRef: string | null;
+  stateCode: string | null;
+  poolId: string | null;
+  sendable: boolean;
+  needs: string[];
+}
+
+/** Attach a number to its account, state, profile and pool in the Convex ledger. */
+export async function attachNumber(input: {
+  phoneNumber: string;
+  accountRef?: string;
+  stateCode?: string;
+  messagingProfileId?: string;
+  countryCode?: string;
+  numberType?: string;
+  telnyxNumberId?: string;
+  orderId?: string;
+  poolId?: string;
+}): Promise<PoolResult<AttachNumberResultRow>> {
+  return poolCall(async () => {
+    const { poolId, ...rest } = input;
+    return convexClient()!.mutation(api.phoneNumbers.mutations.attach, {
+      ...rest,
+      ...(poolId ? { poolId: poolId as Id<"pools"> } : {}),
+    });
+  });
+}
+
 export interface TelnyxAccountSummary {
   ref: string;
   label?: string;

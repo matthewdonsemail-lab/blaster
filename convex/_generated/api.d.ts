@@ -21,6 +21,7 @@ import type * as http_pool from "../http/pool.js";
 import type * as http_sequence from "../http/sequence.js";
 import type * as http_suppressions from "../http/suppressions.js";
 import type * as phoneNumbers_actions from "../phoneNumbers/actions.js";
+import type * as phoneNumbers_attach from "../phoneNumbers/attach.js";
 import type * as phoneNumbers_compliance from "../phoneNumbers/compliance.js";
 import type * as phoneNumbers_model from "../phoneNumbers/model.js";
 import type * as phoneNumbers_mutations from "../phoneNumbers/mutations.js";
@@ -79,6 +80,7 @@ declare const fullApi: ApiFromModules<{
   "http/sequence": typeof http_sequence;
   "http/suppressions": typeof http_suppressions;
   "phoneNumbers/actions": typeof phoneNumbers_actions;
+  "phoneNumbers/attach": typeof phoneNumbers_attach;
   "phoneNumbers/compliance": typeof phoneNumbers_compliance;
   "phoneNumbers/model": typeof phoneNumbers_model;
   "phoneNumbers/mutations": typeof phoneNumbers_mutations;

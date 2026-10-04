@@ -14,6 +14,7 @@ export type {
 export {
   addPoolNumber,
   assignNumberAccount,
+  attachNumber,
   listAccounts,
   setAccount,
   applyOutboundStatus,
