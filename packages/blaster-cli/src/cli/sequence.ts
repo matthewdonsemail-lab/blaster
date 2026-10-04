@@ -307,7 +307,7 @@ async function chooseFromNumber(ctx: SequenceContext): Promise<string | number> 
   return picked ?? abort("Nothing was recorded,");
 }
 
-async function newDraft(ctx: SequenceContext): Promise<number> {
+export async function newDraft(ctx: SequenceContext): Promise<number> {
   const interactive = isInteractive(ctx.json);
   if (interactive) begin("New sequence");
 
@@ -595,7 +595,7 @@ async function listDrafts(ctx: SequenceContext): Promise<number> {
   return 0;
 }
 
-async function showDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
+export async function showDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
   if (!nameOrId) {
     console.error("blaster sequence show: name the sequence");
     return 1;
@@ -610,7 +610,17 @@ async function showDraft(ctx: SequenceContext, nameOrId: string | undefined): Pr
     return 1;
   }
 
-  const seq = await live.client.getSequence(target.id);
+  // The client throws `BlasterApiError` on any non-2xx, so a 404, 502 or 503
+  // never reaches the `!draft` branch below. Without this catch a failed read
+  // escaped as an unhandled rejection and the operator saw a stack trace.
+  let seq: Awaited<ReturnType<typeof live.client.getSequence>>;
+  try {
+    seq = await live.client.getSequence(target.id);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`blaster sequence show: could not read the steps of "${target.name}": ${detail}`);
+    return 1;
+  }
   const draft = draftFromSequence(target, seq);
   if (!draft) {
     // Fabricating `+10000000000` and a single "Step 1" here made a sequence
@@ -635,7 +645,7 @@ async function showDraft(ctx: SequenceContext, nameOrId: string | undefined): Pr
   return printPlan(rows);
 }
 
-async function runDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
+export async function runDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
   if (!nameOrId) {
     console.error("blaster sequence run: name the sequence");
     return 1;
@@ -650,7 +660,14 @@ async function runDraft(ctx: SequenceContext, nameOrId: string | undefined): Pro
     return 1;
   }
 
-  const seq = await live.client.getSequence(target.id);
+  let seq: Awaited<ReturnType<typeof live.client.getSequence>>;
+  try {
+    seq = await live.client.getSequence(target.id);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`blaster sequence run: could not read the steps of "${target.name}": ${detail}`);
+    return 1;
+  }
   const draft = draftFromSequence(target, seq);
   if (!draft) {
     console.error(`blaster sequence run: could not read the steps of "${target.name}".`);

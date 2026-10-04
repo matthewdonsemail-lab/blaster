@@ -5,8 +5,9 @@
  * full row plus its `sequenceSteps`, and this function used to narrow the
  * answer to `{_id, name, status, poolId}`. Everything downstream then had to
  * invent placeholder steps to have something to show. The tests below pin the
- * full row and the ordering by `order`, because the index does not guarantee
- * it.
+ * full row. `convex/sequence/queries.ts:82` already sorts by `order`; the sort
+ * in `client.ts:387` is defence in depth for any other caller of the query, so
+ * the ordering test stays - it is not relying on the index being unsorted.
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
