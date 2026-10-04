@@ -144,6 +144,40 @@ export const enroll = mutation({
 });
 
 /**
+ * Stop sending to one enrollment without ending it. The cursor is kept, so
+ * `resumeEnrollment` continues at the step that was owed. Only an active
+ * enrollment can be paused; anything else is reported, not overwritten.
+ */
+export const pauseEnrollment = mutation({
+  args: { enrollmentId: v.id("sequenceEnrollments") },
+  handler: async (ctx, args) => {
+    const enrollment = await ctx.db.get("sequenceEnrollments", args.enrollmentId);
+    if (!enrollment) throw new Error(`unknown enrollment ${args.enrollmentId}`);
+    if (enrollment.status !== "active") return { status: enrollment.status };
+    await ctx.db.patch("sequenceEnrollments", args.enrollmentId, {
+      status: "paused",
+      nextDueAt: undefined,
+    });
+    return { status: "paused" as const };
+  },
+});
+
+/** Put a paused enrollment back in the queue, due now. */
+export const resumeEnrollment = mutation({
+  args: { enrollmentId: v.id("sequenceEnrollments") },
+  handler: async (ctx, args) => {
+    const enrollment = await ctx.db.get("sequenceEnrollments", args.enrollmentId);
+    if (!enrollment) throw new Error(`unknown enrollment ${args.enrollmentId}`);
+    if (enrollment.status !== "paused") return { status: enrollment.status };
+    await ctx.db.patch("sequenceEnrollments", args.enrollmentId, {
+      status: "active",
+      nextDueAt: Date.now(),
+    });
+    return { status: "active" as const };
+  },
+});
+
+/**
  * Enroll one prospect from inside the backend.
  *
  * The same write as `enroll`, reached by the Twenty enroll seam (an action has
