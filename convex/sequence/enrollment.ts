@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import type { MutationCtx } from "../_generated/server.js";
 import type { Id } from "../_generated/dataModel.js";
 import { dueAtForStep, type SequenceStepDraft } from "../../packages/core/src/pipeline/sequence/index";
+import { availableSender } from "../pool/helpers.js";
 import { isSuppressed } from "../suppressions/model.js";
 
 /** Enrollment states that still own the prospect in a sequence. */
@@ -71,7 +72,6 @@ export async function enrollRecipient(
   let pinnedSenderNumberId: Id<"phoneNumbers"> | undefined;
 
   if (sequence.poolId && sequence.options?.pinSender !== false) {
-    const { availableSender } = await import("../pool/helpers.js");
     const availability = await availableSender(ctx, sequence.poolId, enrolledAt);
     if (availability.sender) {
       pinnedSenderPhoneNumber = availability.sender.phoneNumber;
