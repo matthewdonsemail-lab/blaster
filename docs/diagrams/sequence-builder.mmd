@@ -1,47 +1,64 @@
-%% Building a sequence and deciding who may receive it. The right side is the
-%% part an operator wants before turning a sequence on: a dry run, no sends, and
-%% one grouped reason per skip rather than N identical lines.
+%% Building a sequence and deciding who may receive it.
+%% ---
+%% Corrected 2026-10-04. The previous version of this file drew a send loop
+%% with `evaluateEligibility` -> `resolveMessagingProfile` -> `POST /v2/messages`
+%% -> `advance` -> back to `dueEnrollments`. No such loop exists. The send path
+%% is `convex/sequence/actions.ts` and it is drawn in
+%% `sequence-runner-tick.mmd` and `enrollment-state-machine.mmd`; what is left
+%% here is the part an operator controls: build, preview, enroll, activate.
 flowchart LR
-  subgraph build["Build - pure, no credentials needed"]
-    DRAFT["Choose a sending number<br/>and optionally a campaign"] --> OPTS["Choose options<br/>stop on reply, daily cap,<br/>skip unregistered countries"]
-    DRAFT --> STEPS["Write the steps<br/>text, delay, stop condition"]
-    OPTS --> VALIDATE["validateDraft<br/>returns every problem at once"]
-    STEPS --> VALIDATE
+  subgraph build["Build - no credentials needed, nothing sent"]
+    NEW["blaster sequence new<br/>--name, --from, --steps,<br/>--quiet-hours-override"]
+    NEW --> VALIDATE["validateDraft<br/>returns every problem at once"]
     VALIDATE --> SUMMARY["summarise<br/>sending steps, span in hours"]
+    PREVIEW["blaster sequence preview<br/>or run - a dry run per recipient,<br/>one grouped reason per skip"]
   end
 
-  subgraph persist["Persist - Convex"]
-    SEQ[("sequences<br/>number, campaign, options, stepCount")]
-    STEP[("sequenceSteps<br/>ordered, text, delayHours, isStop")]
-    ENR[("sequenceEnrollments<br/>cursor, status, nextDueAt")]
-    SEQ --> STEP
-    SEQ --> ENR
+  subgraph drafts["The resumable draft - Convex"]
+    SD[("sequenceDrafts<br/>checkpointed as the builder advances:<br/>sender, then steps, then commit")]
+    COMMIT["commitSequenceDraft<br/>the draft row is deleted"]
   end
 
-  VALIDATE -- "valid" --> SEQ
+  VALIDATE -- "valid" --> SD
+  NEW -. "checkpoints on each step" .-> SD
+  SD --> COMMIT
 
-  subgraph dryrun["Dry run - sends nothing"]
-    PREVIEW["evaluateEligibility<br/>per recipient"]
-    PREVIEW --> VERDICT["eligible, or a skip reason"]
+  subgraph persist["The sequence - Convex"]
+    SEQ[("sequences<br/>status starts at draft")]
+    STEP[("sequenceSteps<br/>written in order")]
+    ENR[("sequenceEnrollments<br/>one per recipient")]
+    POOL[("pools / poolNumbers<br/>optional, overrides the fixed number")]
+  end
+  COMMIT --> SEQ
+  SEQ --> STEP
+  SEQ --> POOL
+
+  subgraph reach["Deciding who receives it"]
+    ENROLL["blaster sequence enroll<br/>--filters on agencyProspects,<br/>the same DSL the batch send uses"]
+    ENROLL --> SPLIT{"Per prospect"}
+    SPLIT -- "eligible" --> ENR
+    SPLIT -- "skipped" --> WHY["Report the reason.<br/>Never silently dropped."]
   end
 
-  subgraph send["Send"]
-    DUE["dueEnrollments<br/>nextDueAt at or before now"] --> ELIG{"evaluateEligibility<br/>at send time"}
-    ELIG -- "eligible" --> PROFILE["Resolve the profile from<br/>the recipient's jurisdiction"]
-    ELIG -- "skipped" --> REASON["Record the reason,<br/>do not advance the cursor"]
-    PROFILE --> TELNYX["POST /v2/messages"]
-    TELNYX --> ADVANCE["advance<br/>cursor, nextDueAt from the send time"]
-    ADVANCE --> DUE
+  subgraph turnon["Turning it on"]
+    ACT["blaster sequence activate<br/>status draft -> active"]
+    CRON["The cron finds it.<br/>Nothing else does."]
+    LATER["blaster enrollments<br/>pause, resume, cancel"]
   end
 
-  ENR --> PREVIEW
-  ENR --> DUE
+  ACT --> CRON
+  ACT --> LATER
 
-  RULES["do-not-contact is checked first,<br/>so an opt-out is never downgraded<br/>into a profile problem"]:::note
-  ELIG -.-> RULES
+  RULES["Enrolling into a draft is refused:<br/>a sequence that is not active has<br/>nothing to enroll into."]:::note
+  ENROLL -.-> RULES
+
+  NOTE["stopOnReply, respectDoNotContact and requireProfileForCountry<br/>are sequence options, so one sequence states its own<br/>rules rather than relying on a deployment default."]:::note
+  VALIDATE -.-> NOTE
 
   classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
   classDef store fill:#1b1030,stroke:#7c5cff,color:#f5f7ff
   classDef pure fill:#0f1f2a,stroke:#5ee7ff,color:#f5f7ff
-  class SEQ,STEP,ENR store
-  class VALIDATE,SUMMARY,PREVIEW,VERDICT,ELIG,ADVANCE pure
+  classDef sched fill:#2a1f0f,stroke:#fbbf24,color:#f5f7ff
+  class SD,SEQ,STEP,ENR,POOL store
+  class VALIDATE,SUMMARY,PREVIEW,SPLIT pure
+  class CRON sched

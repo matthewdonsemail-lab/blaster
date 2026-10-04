@@ -10,6 +10,59 @@ are going out, and discovers otherwise from a prospect.
 
 ## What works today
 
+<!-- embedded: sequence-runner-tick.mmd -->
+One tick of the runner. The ordering in the middle is the load-bearing part: capacity is claimed before the step is, because a step claim is permanent.
+
+```mermaid
+flowchart TD
+  CRON["cron: sequence runner<br/>every 15s, limit 25"] --> ACTION["runDueEnrollments<br/>internal action, sequential and bounded"]
+
+  ACTION --> IDS["runDueEnrollmentIds<br/>status active AND nextDueAt at or before now,<br/>oldest first"]
+  IDS --> ONE["runEnrollmentStep<br/>for each id, one at a time"]
+
+  subgraph tick["Inside one step - the order is load-bearing"]
+    CTX["loadRunContext<br/>one consistent snapshot:<br/>enrollment, steps, sender, recipient"]
+    CTX --> ELIG{"evaluateEligibility<br/>suppression, already replied,<br/>daily cap, profile for country"}
+    ELIG -- "not eligible" --> SKIP["applySchedule<br/>record the reason, do not advance"]
+    ELIG -- "eligible" --> STATE{"same-state rule<br/>checkStateMatch<br/>PA owns the number, PA recipient"}
+    STATE -- "mismatch" --> PARK["park as awaiting_human<br/>hard block, no fallback"]
+    STATE -- "match" --> QUIET{"quiet hours in the<br/>recipient's own zone"}
+    QUIET -- "inside" --> DEFERR["defer to the window<br/>never dropped, always re-planned"]
+    QUIET -- "outside, or the<br/>sequence sets the override" --> CAP
+  end
+
+  subgraph claim["The two claims, in this order"]
+    CAP["claimSendCapacity<br/>account ceiling, per-number bucket,<br/>campaign, brand"]
+    CAP --> CAPOK{"Capacity?"}
+    CAPOK -- "no" --> DEFER["defer with lastSkipReason<br/>send-capacity-exhausted.<br/>No claim held, so the step retries."]
+    CAPOK -- "yes" --> STEP["claimStep<br/>on this exact cursor"]
+    STEP --> STEPOK{"Claimed?"}
+    STEPOK -- "no, another run owns it" --> LOST["do nothing. Losing this race<br/>is not a failure."]
+    STEPOK -- "yes" --> RECHECK
+  end
+
+  RECHECK["Re-read after the claim<br/>the stopping webhook runs in its own<br/>transaction and cannot interrupt this action,<br/>so this is the only safe place to notice"]
+  RECHECK --> LIVE{"Still active, same cursor,<br/>has not replied?"}
+  LIVE -- "no" --> NOTSENT["record the outcome, send nothing"]
+  LIVE -- "yes" --> SEND["POST /v2/messages<br/>with the resolved profile"]
+  SEND --> OUTCOME{"Result"}
+  OUTCOME -- "delivered or accepted" --> RECORD["recordStep, applySchedule<br/>cursor advances, nextDueAt<br/>from the send time"]
+  OUTCOME -- "rate limited or transient" --> BACKOFF["scheduleRetry<br/>back off on the provider's code"]
+  OUTCOME -- "unknown whether it went out" --> AMBIG["recordStep as ambiguous.<br/>Never retried on a timer."]
+
+  NOTE["The runner reads dueEnrollments and nothing<br/>else decides what is due, so a cron and a manual<br/>run cannot disagree about the queue."]:::note
+  IDS -.-> NOTE
+
+  classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
+  classDef stop fill:#2a0f0f,stroke:#f87171,color:#f5f7ff
+  classDef defer fill:#2a1f0f,stroke:#fbbf24,color:#f5f7ff
+  classDef pure fill:#0f1f2a,stroke:#5ee7ff,color:#f5f7ff
+  class CTX,ELIG,STATE,QUIET pure
+  class PARK,NOTSENT,AMBIG stop
+  class DEFERR,DEFER,BACKOFF defer
+```
+
+
 | Piece | Where | State |
 | --- | --- | --- |
 | Draft shape, validation, eligibility rules | `pipeline/sequence/helpers/builder.ts` | done, tested |
@@ -82,6 +135,103 @@ The response reports `stoppedEnrollments`, so the stop is observable without
 reading the database.
 
 ## The two design decisions worth knowing before you extend it
+
+<!-- embedded: enrollment-state-machine.mmd -->
+The state machine itself. Three states need reading twice — `ambiguous`, `awaiting_human` and `opted_out`.
+
+```mermaid
+stateDiagram-v2
+  direction TB
+
+  [*] --> scheduled
+
+  scheduled --> evaluating: TICK, stamps now
+  evaluating --> awaiting_human: sender not ready
+  evaluating --> awaiting_human: recipient unplaceable
+  evaluating --> completed: past the last step
+  evaluating --> completed: reached the stop step
+  evaluating --> scheduled: not eligible, record the reason
+  evaluating --> scheduled: inside quiet hours, defer to the window
+  evaluating --> claiming
+
+  claiming --> sending: claim taken
+  claiming --> ambiguous: another run owns this exact step
+
+  sending --> sent: SEND_SUCCEEDED
+  sending --> ambiguous: SEND_AMBIGUOUS
+  sending --> scheduled: SEND_FAILED and retryable
+  sending --> failed: SEND_FAILED and not retryable
+
+  sent --> completed: past the last step
+  sent --> scheduled
+
+  ambiguous --> sent: RECONCILE and it went out
+  ambiguous --> scheduled: RECONCILE and it did not
+
+  awaiting_human --> scheduled: RESUME, an operator decided
+  paused --> scheduled: RESUME
+  failed --> scheduled: RESUME
+  opted_out --> scheduled: RESUME
+
+  replied --> replied: INBOUND_REPLY ignored, terminal
+
+  state "held from EVERY state" as TOPLEVEL {
+    direction LR
+    ANY["any node above"]
+    ANY --> replied: INBOUND_REPLY
+    ANY --> opted_out: OPT_OUT
+    ANY --> paused: PAUSE
+  }
+
+  note right of ANY
+    ANY is a convention, not a
+    real node. These three are
+    declared in the machine's
+    top-level `on` block, so they
+    win from whichever state the
+    machine happens to be in.
+    RESUME is not among them.
+  end note
+
+  completed --> [*]
+
+  note right of completed
+    The persisted status union also
+    contains `cancelled`, which has
+    no node here: it is written by
+    the mutations, not reached by
+    the machine. Nine statuses, and
+    the two unions are asserted
+    equal in convex/sequence/types.ts.
+  end note
+
+  note right of ambiguous
+    No TICK handler, and that
+    omission is the feature:
+    nothing here ever retries
+    an unknown outcome on a
+    timer. It waits for the
+    webhook to say what happened.
+  end note
+
+  note right of awaiting_human
+    Parked, not guessed. The
+    recipient could not be placed
+    in a time zone, or the sender
+    failed readiness, so no send
+    time can be shown to be legal.
+  end note
+
+  note right of opted_out
+    Sticky. A reply or an opt-out
+    is a fact about the person,
+    not the step, so the handlers
+    that reach it are declared at
+    the top level and win from
+    every state.
+  end note
+```
+
 
 ### A send is claimed before it is attempted
 

@@ -19,6 +19,41 @@ path. That guard is "the wall", and passing it is the subject of this page.
 
 ## Two credentials, two jobs
 
+<!-- embedded: twenty-auth-paths.mmd -->
+The wall in front of Twenty, and which credential opens what.
+
+```mermaid
+flowchart TB
+    operator["Operator<br/>browser, or the CLI"]
+    api["Blaster API<br/>apps/api"]
+    core["@blaster/core<br/>twenty/oauth + twenty/graphql"]
+    guard{"Auth-guard<br/>HTTP basic auth"}
+    twenty["Twenty<br/>/authorize /oauth/*<br/>/rest /graphql"]
+    data[("Twenty records<br/>agencyPhones agencyLeads<br/>agencyCalls agencyProspects")]
+
+    operator -->|"1. redirect to /authorize<br/>no credential of ours"| guard
+    guard -->|"native user:pass prompt,<br/>once per browser"| twenty
+    operator -->|"2. POST code + PKCE verifier"| api
+    api -->|"3. Basic: POST /oauth/token"| guard
+    guard --> twenty
+    api -->|"returns access + refresh"| operator
+    operator -->|"4. Bearer: reads"| api
+    api -->|"Bearer TWENTY_API_KEY<br/>guard exempts this path"| twenty
+    twenty --> data
+
+    wall["The wall: Basic credentials answer for the guard.<br/>They are not a record credential, and the bearer key is not<br/>a credential for the guard. Both are needed on a guarded<br/>deployment, on different paths."]
+    bearer["TWENTY_API_KEY identifies the workspace, not the operator.<br/>Server-side only; never in the browser."]
+    refresh["An expired operator token is a 200 with UNAUTHENTICATED<br/>inside the GraphQL payload, not a 401. twenty/graphql reads the<br/>payload, refreshes once, and replays the same document."]
+
+    guard -.- wall
+    api -.- bearer
+    core -.- refresh
+
+    classDef wallBox fill:#fffbeb,stroke:#d97706,color:#451a03
+    class wall,bearer,refresh wallBox
+```
+
+
 | Credential | Carried as | Covers | Where it lives |
 | --- | --- | --- | --- |
 | `TWENTY_API_KEY` | `Authorization: Bearer` | `/rest/*` and `/graphql` — every record read and write | server only |

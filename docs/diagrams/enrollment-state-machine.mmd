@@ -1,0 +1,107 @@
+%% One enrollment's state machine, verbatim from
+%% `packages/core/src/pipeline/sequence/machine.ts` (checked 2026-10-04).
+%% ---
+%% This diagram exists because the previous sequence-builder.mmd drew a send
+%% loop that is not the code. There is no loop here: the runner hands one
+%% enrollment one TICK and the machine returns a verdict. The three states
+%% worth reading twice are `ambiguous` (no TICK handler, by design),
+%% `awaiting_human` (parked, never guessed) and `opted_out` (the only way out
+%% is an explicit RESUME).
+%% ---
+%% Three events are declared in the machine's top-level `on` block, so they are
+%% held from every state and are drawn at the foot of this diagram:
+%% INBOUND_REPLY (to `replied`, or ignored when the reply is already an opt-out),
+%% OPT_OUT (to `opted_out`) and PAUSE (to `paused`). RESUME is deliberately NOT
+%% top-level: it only leaves `awaiting_human`, `opted_out`, `paused` and
+%% `failed`, and an earlier version of this file claimed otherwise.
+%% fact: machine-top-level-events 3
+stateDiagram-v2
+  direction TB
+
+  [*] --> scheduled
+
+  scheduled --> evaluating: TICK, stamps now
+  evaluating --> awaiting_human: sender not ready
+  evaluating --> awaiting_human: recipient unplaceable
+  evaluating --> completed: past the last step
+  evaluating --> completed: reached the stop step
+  evaluating --> scheduled: not eligible, record the reason
+  evaluating --> scheduled: inside quiet hours, defer to the window
+  evaluating --> claiming
+
+  claiming --> sending: claim taken
+  claiming --> ambiguous: another run owns this exact step
+
+  sending --> sent: SEND_SUCCEEDED
+  sending --> ambiguous: SEND_AMBIGUOUS
+  sending --> scheduled: SEND_FAILED and retryable
+  sending --> failed: SEND_FAILED and not retryable
+
+  sent --> completed: past the last step
+  sent --> scheduled
+
+  ambiguous --> sent: RECONCILE and it went out
+  ambiguous --> scheduled: RECONCILE and it did not
+
+  awaiting_human --> scheduled: RESUME, an operator decided
+  paused --> scheduled: RESUME
+  failed --> scheduled: RESUME
+  opted_out --> scheduled: RESUME
+
+  replied --> replied: INBOUND_REPLY ignored, terminal
+
+  state "held from EVERY state" as TOPLEVEL {
+    direction LR
+    ANY["any node above"]
+    ANY --> replied: INBOUND_REPLY
+    ANY --> opted_out: OPT_OUT
+    ANY --> paused: PAUSE
+  }
+
+  note right of ANY
+    ANY is a convention, not a
+    real node. These three are
+    declared in the machine's
+    top-level `on` block, so they
+    win from whichever state the
+    machine happens to be in.
+    RESUME is not among them.
+  end note
+
+  completed --> [*]
+
+  note right of completed
+    The persisted status union also
+    contains `cancelled`, which has
+    no node here: it is written by
+    the mutations, not reached by
+    the machine. Nine statuses, and
+    the two unions are asserted
+    equal in convex/sequence/types.ts.
+  end note
+
+  note right of ambiguous
+    No TICK handler, and that
+    omission is the feature:
+    nothing here ever retries
+    an unknown outcome on a
+    timer. It waits for the
+    webhook to say what happened.
+  end note
+
+  note right of awaiting_human
+    Parked, not guessed. The
+    recipient could not be placed
+    in a time zone, or the sender
+    failed readiness, so no send
+    time can be shown to be legal.
+  end note
+
+  note right of opted_out
+    Sticky. A reply or an opt-out
+    is a fact about the person,
+    not the step, so the handlers
+    that reach it are declared at
+    the top level and win from
+    every state.
+  end note

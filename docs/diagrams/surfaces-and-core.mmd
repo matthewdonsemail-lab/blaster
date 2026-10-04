@@ -1,5 +1,13 @@
-%% Why the domain library is separate: the three surfaces answer from the same
-%% code, so a CLI result, an MCP result, and an HTTP result cannot disagree.
+%% Why the domain library is separate, and how a capability reaches all three
+%% surfaces. Corrected 2026-10-04 to reflect the capability registry, which is
+%% the reason the three surfaces cannot silently drift apart.
+%% ---
+%% The counts below are from `packages/core/src/blaster/capabilities/helpers/registry.ts`
+%% on that date and are expected to differ: not every capability is exposed on
+%% every surface. What must never differ is the reverse — a CLI command, an MCP
+%% tool or a route that exists but is not in the registry. `scripts/check-surfaces.mjs`
+%% rejects that in both directions.
+%% fact: registry-entries 52
 flowchart LR
   subgraph surfaces["Surfaces - no business rules"]
     A["blaster breakdown"]
@@ -33,4 +41,20 @@ flowchart LR
   BUILD -.-> NOTE
   PROF -.-> NOTE
 
+  subgraph registry["The registry is the contract"]
+    REG[("capabilities registry<br/>52 entries, each declaring its<br/>cli, mcp and http surface")]
+    GATE["scripts/check-surfaces.mjs<br/>a pre-push gate"]
+  end
+
+  A -. "declared here" .-> REG
+  B -.-> REG
+  C -.-> REG
+  D -.-> REG
+  REG --> GATE
+  GATE --> FAIL["Rejects drift in either direction:<br/>a registry entry with no surface,<br/>and a surface with no entry"]
+
   classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
+  classDef store fill:#1b1030,stroke:#7c5cff,color:#f5f7ff
+  classDef stop fill:#2a0f0f,stroke:#f87171,color:#f5f7ff
+  class REG store
+  class FAIL stop

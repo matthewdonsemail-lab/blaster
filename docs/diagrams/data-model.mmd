@@ -1,48 +1,93 @@
 %% Where state lives. Twenty is the system of record for pipeline data and is
 %% never mirrored; Convex holds only what Twenty cannot represent.
+%% ---
+%% Checked against `convex/schema.ts` and its seven domain files on 2026-10-04.
+%% The previous version of this diagram listed 9 tables; there are 15. It was
+%% missing pools, poolNumbers, sequenceDrafts, sequenceSendClaims,
+%% suppressions, telnyxAccounts and discoveryRuns, which is most of the
+%% outbound system. `pnpm check:diagrams` now fails if this count drifts.
+%% fact: schema-tables 15
+%% fact: schema-modules 7
 flowchart LR
   subgraph twenty["Twenty CRM - system of record, not mirrored"]
     TL["agencyLeads<br/>status is a SELECT"]
     TC["agencyCalls<br/>outcome, durationSeconds"]
-    TP["agencyProspects"]
+    TP["agencyProspects<br/>enrolled from here by filter DSL"]
     TPH["agencyPhones<br/>messagingProfileId per number"]
   end
 
-  subgraph convex["Convex - state Twenty cannot represent"]
-    MP[("messagingProfiles<br/>country to profile id<br/>10DLC campaign, alpha sender<br/>indexed by country")]
-    NT[("notifications<br/>ruleId, severity, message<br/>stateKey, deliveredAt<br/>indexed by stateKey")]
-    DR[("discoveryRuns<br/>status, maxCostUsd, spentUsd<br/>indexed by startedAt")]
-    SQ[("sequences<br/>name, status, fromNumber<br/>campaignId, options<br/>indexed by status, fromNumber")]
+  subgraph messaging["Convex - messaging"]
+    MP[("messagingProfiles<br/>country to profile id<br/>indexed by country")]
+    NT[("notifications<br/>ruleId, severity, message<br/>stateKey, deliveredAt")]
+  end
+
+  subgraph sequence["Convex - the sequencer"]
+    SQ[("sequences<br/>name, status, fromNumber, poolId<br/>stepCount, options<br/>indexed by status, campaignId")]
     SS[("sequenceSteps<br/>text, delayHours, isStop<br/>ordered by `order`")]
     SE[("sequenceEnrollments<br/>cursor, status, nextDueAt<br/>ownerMemberId, lastSkipReason")]
-    PN[("phoneNumbers<br/>E.164 ledger, Telnyx metadata<br/>indexed by phoneNumber")]
+    SC[("sequenceSendClaims<br/>enrollmentId + cursor<br/>NEVER deleted")]
+    SD[("sequenceDrafts<br/>resumable builder checkpoints<br/>indexed by ownerMemberId")]
+  end
+
+  subgraph phone["Convex - the number ledger"]
+    PN[("phoneNumbers<br/>E.164, Telnyx ids, 10DLC state,<br/>messagingProfileId, allowUnregistered<br/>indexed by phoneNumber")]
+    TA[("telnyxAccounts<br/>ref, status: active/burned/disabled")]
+  end
+
+  subgraph pool["Convex - number pools"]
+    PL[("pools<br/>status, strategy, cursor,<br/>minSpacingMs, dailyCapPerNumber")]
+    PLN[("poolNumbers<br/>the relation<br/>order, status, sentToday,<br/>nextAvailableAt")]
+  end
+
+  subgraph conversation["Convex - the reply side"]
     CV[("conversations<br/>pairKey, summary fields<br/>indexed by pairKey")]
     MS[("messages<br/>direction, body, status<br/>dedupe on providerEventId")]
   end
 
+  subgraph safety["Convex - the opt-out"]
+    SUP[("suppressions<br/>keyed on the E.164 peer<br/>source: inbound-opt-out or manual")]
+  end
+
+  subgraph discovery["Convex - discovery"]
+    DR[("discoveryRuns<br/>status, maxCostUsd, spentUsd")]
+  end
+
   READ["Read"] --> TL
   READ --> TC
-  LIST["blaster_list_records"] --> TP
+  LIST["blaster prospects"] --> TP
   READ --> TPH
 
   TPH -. "a number may bind its own profile,<br/>which outranks the country rule" .-> MP
-  MP --> RESOLVE["resolveMessagingProfile"]
-  TPH --> RESOLVE
+  TPH -. "the E.164 number is the sync key" .-> PN
+
+  SQ --> SS
+  SQ --> SE
+  SQ -. "a sequence may work a pool instead<br/>of one fixed number" .-> PL
+  PL --> PLN
+  PLN --> PN
+  PN --> TA
+
+  SE -. "cursor + status drive<br/>the state machine" .-> SS
+  SE -. "one row per (enrollment, cursor)" .-> SC
+  SQ -. "an unfinished builder draft" .-> SD
+
+  CV --> MS
+  MS -. "a reply stops the peer's<br/>enrollments in one transaction" .-> SE
+  SUP -. "written by inbound STOP only,<br/>checked at enroll and send" .-> SE
+  SUP --> CV
 
   RULES["evaluateNotifications"] --> NT
   NT --> KEY["stateKey decides whether<br/>a notification is new"]
   TREG["treg discovery run"] --> DR
 
-  SQ --> SS
-  SQ --> SE
-  SE -. "cursor + status<br/>drive the statechart" .-> SS
-  PN -. "sync key is the E.164 number" .-> TPH
-  CV --> MS
-  MS -. "a reply stops enrollments<br/>in the same transaction" .-> SE
-
-  NOTE["A relation declared as campaignId is written to Twenty as campaignIdId.<br/>Cursors are ignored, so paging walks id ascending instead."]:::note
+  NOTE["A relation declared as campaignId is written to Twenty<br/>as campaignIdId. Cursors are ignored by the API,<br/>so paging walks id ascending instead."]:::note
   twenty -.-> NOTE
+
+  NOTE2["sequenceSendClaims is the one table that only grows.<br/>A row is the claim on a step, and releasing a claim<br/>is exactly how a duplicate send would happen."]:::note
+  SC -.-> NOTE2
 
   classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
   classDef store fill:#1b1030,stroke:#7c5cff,color:#f5f7ff
-  class MP,NT,DR store
+  classDef grow fill:#2a0f0f,stroke:#f87171,color:#f5f7ff
+  class MP,NT,DR,SQ,SS,SE,SD,PL,PLN,PN,TA,CV,MS,SUP store
+  class SC grow

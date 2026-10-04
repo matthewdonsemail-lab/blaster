@@ -1,51 +1,66 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-04T06:32:39Z
+updated: 2026-10-04T07:34:02Z
 commit: fix: stop the sequence read path from reporting steps it does not have
 -->
 
-The running scope for the outbound-send correctness objective, opened by the
-first proven live 3-step send. `scripts/check-goal.mjs` refuses a push unless
+The running scope for the documentation objective: the diagrams, README, and prose
+docs must describe how Blaster actually works, and must be kept honest by a
+gate rather than by discipline. `scripts/check-goal.mjs` refuses a push unless
 this file is a current outline - updated within 20 minutes, naming the commit
 message, the files changed, and the task list. Refresh it with
 `node scripts/check-goal.mjs --stamp` right before pushing.
 
 ## Objective
 
-What Blaster prints about a sequence is what Blaster stored. The live send of
-2026-10-04 proved the send path works end to end and exposed the read path
-lying about it: `GET /api/sequences/:id` narrowed the Convex row to four fields
-and dropped the steps, so `blaster sequence show` and `blaster sequence run`
-fell back to a placeholder sequence, and `blaster sequence new` let a resumed
-draft in Convex silently override the steps the operator had just passed. The
-work is complete when a sequence read returns its steps, an explicit flag beats
-a resumed draft, and a failed read is reported as a failure rather than
-described with content nobody wrote.
+As more prompts, CLI commands, API routes, and MCP tools are added, the written
+description of the system is the only thing telling a new reader which
+credential a given route needs and what a diagram is asserting. It has to be
+complete, and it has to fail loudly when it goes stale. The work is complete
+when every entry surface is drawn, the enrollment and runner state machines are
+transcribed from the code rather than summarised, `docs/diagrams/README.md`
+points a new reader at the three diagrams that explain the system, and
+`pnpm check:diagrams` parses every diagram and asserts the facts they claim -
+so a diagram cannot quietly contradict the code.
 
 ## Files changed
 
-- apps/api/src/lib/convex/helpers/client.ts
-- apps/api/test/convex-get-sequence.test.ts
-- apps/api/test/sequence-detail-route.test.ts
-- docs/production-readiness.md
+- README.md
+- docs/architecture.md
+- docs/call-history.md
+- docs/diagrams/README.md
+- docs/diagrams/data-model.mmd
+- docs/diagrams/deployment-and-gates.mmd
+- docs/diagrams/entrypoints-and-transports.mmd
+- docs/diagrams/enrollment-state-machine.mmd
+- docs/diagrams/guidance-and-ai-prompts.mmd
+- docs/diagrams/sequence-builder.mmd
+- docs/diagrams/sequence-runner-tick.mmd
+- docs/diagrams/surfaces-and-core.mmd
+- docs/diagrams/system-overview.mmd
+- docs/identity.md
+- docs/send.md
+- docs/sequencer.md
 - goal.md
-- packages/blaster-cli/src/cli/sequence.ts
-- packages/blaster-cli/test/sequence-drafts.test.ts
-- packages/core/src/blaster/api/helpers/client.ts
-- packages/core/src/blaster/api/types.ts
-- packages/core/test/blaster-api-client.test.ts
+- package.json
+- plugins/blaster/.claude-plugin/plugin.json
+- pnpm-lock.yaml
+- scripts/check-diagrams.mjs
 
 ## Task
 
-- [x] Live proof recorded: 3 steps at 0s/30s/30s delivered to one recipient from `+12724470148`, with the Convex and Telnyx ids, in `docs/production-readiness.md` section 5
-- [x] The 10DLC claim corrected: the missing messaging campaign did not block delivery, so the readiness doc no longer asserts that it does
-- [x] `getSequenceById` returns the full row including `steps`, sorted by `order`
-- [x] `SequenceDetail` in `@blaster/core`, and the API client typed against it instead of a four-field summary
-- [x] `blaster sequence show` and `blaster sequence run` report a failed read instead of printing `+10000000000` and a fake step
-- [x] `blaster sequence new`: an explicit `--steps` overrides a resumed Convex draft, and says so
-- [x] Regression tests for all three (`convex-get-sequence`, `sequence-detail-route`, `blaster-api-client`, `sequence-drafts`)
-- [x] Full `pnpm check` green: 727 tests, typecheck, lint, secrets, conventions, surfaces
+- [x] `entrypoints-and-transports.mmd`: all four caller-facing surfaces, both MCP transports, the Hono and Convex HTTP routers as non-interchangeable, and the routes that deliberately skip `requireOperator`
+- [x] `enrollment-state-machine.mmd`: the statechart transcribed from `machine.ts`, with the states only an operator can leave marked
+- [x] `sequence-runner-tick.mmd`: the cron tick, the due queue, every skip and defer reason, and why capacity is claimed before the step
+- [x] `guidance-and-ai-prompts.mmd`: the deterministic reply templates, the single LLM call, and why `@clack/prompts` is neither
+- [x] Existing diagrams corrected against the code: `system-overview`, `surfaces-and-core`, `data-model` (all 15 tables), `sequence-builder`, `deployment-and-gates`
+- [x] `docs/diagrams/README.md` leads with the three diagrams to read first and states the rendering trap
+- [x] Embedded diagrams in `README.md` and in `docs/architecture.md`, `docs/send.md`, `docs/sequencer.md`, `docs/identity.md`, `docs/call-history.md` from the same source as the `.mmd` files
+- [x] `scripts/check-diagrams.mjs`: parses every `.mmd` and every embedded `mermaid` fence with Mermaid's own parser, and asserts the facts the diagrams claim about the code
+- [x] Self-test for the checker (unparseable diagram rejected, contradicted fact rejected, fenced-block extraction), wired into `pnpm check` as gates 14 and 15
+- [x] `mermaid` and `jsdom` added as devDependencies via pnpm; lockfile updated
+- [x] Full `pnpm check` green with the new gates in the chain
 
 ## Backlog carried forward from the pool objective
 
