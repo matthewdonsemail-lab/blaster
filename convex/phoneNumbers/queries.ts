@@ -1,5 +1,6 @@
 import { internalQuery, query } from "../_generated/server.js";
 import { v } from "convex/values";
+import { checkDocReadiness } from "./compliance.js";
 
 /**
  * Phone-number reads.
@@ -46,7 +47,6 @@ export const getCompliance = query({
       .withIndex("phoneNumber", (q) => q.eq("phoneNumber", args.phoneNumber))
       .unique();
     if (!row) return null;
-    const { checkDocReadiness } = await import("./compliance.js");
     const readiness = checkDocReadiness(row);
     return {
       phoneNumber: row.phoneNumber,

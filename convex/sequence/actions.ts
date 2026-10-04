@@ -1,6 +1,7 @@
 "use node";
 
 import { v } from "convex/values";
+import { checkDocReadiness } from "../phoneNumbers/compliance.js";
 // Aliased: `profileEnv` below builds the Telnyx SDK's own env record and this
 // handler holds it in a local `env`, which would otherwise shadow the Convex
 // one for the rest of the function.
@@ -105,7 +106,6 @@ export const runEnrollmentStep = internalAction({
       });
       if (phoneDoc) {
         numberProfileId = phoneDoc.messagingProfileId ?? null;
-        const { checkDocReadiness } = await import("../phoneNumbers/compliance.js");
         const docReadiness = checkDocReadiness(phoneDoc, now);
         if (!docReadiness.ready) {
           senderReadiness = { ready: false, reason: docReadiness.reason };
@@ -155,7 +155,6 @@ export const runEnrollmentStep = internalAction({
         phoneNumber: fromNumber,
       });
       if (phoneDoc) {
-        const { checkDocReadiness } = await import("../phoneNumbers/compliance.js");
         const docReadiness = checkDocReadiness(phoneDoc, now);
         if (!docReadiness.ready) {
           senderReadiness = { ready: false, reason: docReadiness.reason };
