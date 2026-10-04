@@ -361,7 +361,7 @@ async function main(): Promise<number> {
         console.log(POOLS_USAGE);
         return 0;
       }
-      return await poolsMain(positional.slice(1), flags, json);
+      return await poolsMain(positional, flags, json);
     }
 
     case "accounts":
@@ -370,7 +370,7 @@ async function main(): Promise<number> {
         console.log(ACCOUNTS_USAGE);
         return 0;
       }
-      return await accountsMain(positional.slice(1), flags, json);
+      return await accountsMain(positional, flags, json);
     }
 
     case "suppress":
@@ -379,7 +379,7 @@ async function main(): Promise<number> {
         console.log(SUPPRESS_USAGE);
         return 0;
       }
-      return await suppressMain(positional.slice(1), flags, json);
+      return await suppressMain(positional, flags, json);
     }
 
     default: {

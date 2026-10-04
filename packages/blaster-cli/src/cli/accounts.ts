@@ -105,6 +105,8 @@ export function formatAccounts(rows: TelnyxAccountRow[]): string {
     .join("\n");
 }
 
+const ACCOUNT_ACTIONS = new Set(["list", "ls", "add", "burn", "disable", "activate", "assign"]);
+
 export async function accountsMain(
   rest: string[],
   flags: CliFlags,
@@ -115,6 +117,11 @@ export async function accountsMain(
   if (action === "help" || action === undefined) {
     console.log(ACCOUNTS_USAGE);
     return action === undefined ? 1 : 0;
+  }
+  if (!ACCOUNT_ACTIONS.has(action)) {
+    console.error(`blaster accounts: unknown action "${action}"
+${ACCOUNTS_USAGE}`);
+    return 1;
   }
   const client = await liveClient(flags, json, root);
   if (typeof client === "number") return client;
