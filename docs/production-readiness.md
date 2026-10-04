@@ -66,7 +66,23 @@ Cost $0.0085 per message, `traffic_type: A2P`. The first attempt was held by qui
 
 Items 4 to 6 are `open`: no reply, STOP, or prospect-to-lead promotion has been exercised against a live carrier.
 
-**The 10DLC gate did not block delivery, and the readiness table must say so.** `+12724470148` has no messaging campaign attached to its profile (`messaging_campaign_id: null`, empty `messaging_campaigns` on profile `4001a0b6-245d-4e4d-9fdd-bbbf4d6344d9`) and `blaster phones compliance` reports `Brand: none`, `Campaign: none`. All three messages still delivered. The local gate in row 1 of section 3 therefore describes a rule Blaster enforces, not a condition Telnyx enforced on this account. Registration is still the right thing to have before a real cold list, and the gate should still refuse to call the number sendable — but a claim that the missing campaign makes sends fail is not supported by this evidence, and must not be repeated.
+**The 10DLC gate did not block this send, and the readiness table must say why.** `+12724470148` has no messaging campaign attached to its profile (`messaging_campaign_id: null`, empty `messaging_campaigns` on profile `4001a0b6-245d-4e4d-9fdd-bbbf4d6344d9`), and `blaster phones compliance` reports `Brand: none`, `Campaign: none`. All three messages still delivered.
+
+The gate did run, and it let the send through on its one documented bypass rather than because it was absent. `GET /api/phones/+12724470148/compliance` answers:
+
+```json
+{"phoneNumber":"+12724470148","messagingProfileId":"4001a0b6-...",
+ "brandId":null,"campaignId":null,"assignmentStatus":null,"carrierProvisioningStatus":null,
+ "complianceCheckedAt":1791083784465,"complianceSource":"telnyx-api",
+ "readiness":{"ready":true}}
+```
+
+In `checkSenderReadiness` (`packages/core/src/pipeline/sequence/compliance.ts`) a US long code with no `campaignId` returns `missing-registration` unless `allowUnregistered` is set, which is checked at line 132 and returns `{ready: true}` immediately. `ready: true` with `brandId` and `campaignId` both null is only reachable that way, so this number carries the per-number operator override.
+
+Two consequences, both of which the wording above must respect:
+
+- The rule in section 3 row 1 was enforced and overridden by an operator, on a number with a recorded reason. That is the feature working.
+- Telnyx delivered three A2P messages from this number with no campaign on its profile. So a claim that the missing campaign makes sends fail is not supported by this evidence and must not be repeated. Registration is still the right thing to have before a real cold list, and the gate should still refuse to call the number sendable without the override — but the carrier did not enforce it here.
 
 ## 6. Documentation
 
