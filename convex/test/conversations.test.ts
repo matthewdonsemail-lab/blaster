@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { required, seedPhoneNumber, seedPool, seedSequence, testBackend } from "./harness.js";
-import { ref } from "./refs.js";
+import { required, seedPhoneNumber, seedPool, seedSequence, testBackend } from "./harness.support.js";
+import { ref } from "./refs.support.js";
 
 /**
  * Inbound: campaign attribution and the peer-wide reply check.

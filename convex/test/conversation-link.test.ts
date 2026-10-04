@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { seedSequence, testBackend } from "./harness.js";
-import { inboundRef, linkRef } from "./refs.js";
+import { seedSequence, testBackend } from "./harness.support.js";
+import { inboundRef, linkRef } from "./refs.support.js";
 
 describe("linkConversation", () => {
   async function seed(t: ReturnType<typeof testBackend>) {

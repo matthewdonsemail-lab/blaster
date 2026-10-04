@@ -1,6 +1,6 @@
 import { convexTest } from "convex-test";
 import schema from "../schema.js";
-import { modules } from "./modules.js";
+import { modules } from "./modules.support.js";
 
 /**
  * The shared test harness.

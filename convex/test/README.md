@@ -28,7 +28,7 @@ node_modules/.bin/vitest run convex/test/pool.test.ts
 
 ## The harness
 
-`harness.ts` builds a `convexTest(schema)` instance and exposes the seed helpers
+`harness.support.ts` builds a `convexTest(schema)` instance and exposes the seed helpers
 the tests share, so a test reads as the scenario it describes rather than as a
 pile of inserts. It never talks to a deployment: `convex-test` runs the functions
 in-process, so no `CONVEX_URL` and no credentials are needed.
