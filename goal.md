@@ -1,7 +1,7 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-04T08:31:27Z
+updated: 2026-10-04T08:52:15Z
 commit: test: cover the read failures the send-path tables only described
 -->
 
