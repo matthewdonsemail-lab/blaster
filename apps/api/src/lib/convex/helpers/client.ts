@@ -1,7 +1,7 @@
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../../../../../convex/_generated/api.js";
 import type { Id } from "../../../../../../convex/_generated/dataModel.js";
-import type { ConversationMessageRow, ConversationPersonRow, ConversationSummary, PoolDetail, PoolNumberRow, PoolSummary, SequenceOption } from "@blaster/core";
+import type { ConversationMessageRow, ConversationPersonRow, ConversationSummary, PoolDetail, PoolNumberRow, PoolSummary, SequenceDetail, SequenceOption } from "@blaster/core";
 
 /**
  * The API's Convex client.
@@ -369,16 +369,38 @@ export async function listSequences(): Promise<PoolResult<SequenceOption[]>> {
   });
 }
 
-/** One sequence with its steps, as the operator inbox reads it. */
-export async function getSequenceById(
-  sequenceId: string,
-): Promise<PoolResult<{ _id: string; name: string; status: string; poolId: string | null } | null>> {
+/** One sequence with its steps, as the operator inbox reads it.
+ *
+ * The full row is returned, not a four-field summary. The Convex query is
+ * `getSequence`, which reads the `sequenceSteps` rows and returns them, so
+ * narrowing the response here threw away exactly what `blaster sequence show`
+ * and `blaster sequence run` need to describe the sequence honestly. With the
+ * summary those two commands fell through to a placeholder and printed a
+ * sequence nobody had written.
+ */
+export async function getSequenceById(sequenceId: string): Promise<PoolResult<SequenceDetail | null>> {
   return poolCall(async () => {
     const row = await convexClient()!.query(api.sequence.queries.getSequence, {
       sequenceId: sequenceId as Id<"sequences">,
     });
     if (!row) return null;
-    return { _id: row._id, name: row.name, status: row.status, poolId: row.poolId ?? null };
+    const steps = [...(row.steps as Array<Record<string, unknown>>)]
+      .sort((a, b) => Number(a.order ?? 0) - Number(b.order ?? 0))
+      .map((step) => ({
+        text: String(step.text ?? ""),
+        delayHours: Number(step.delayHours ?? 0),
+        isStop: step.isStop === true,
+      }));
+    return {
+      _id: row._id,
+      name: row.name,
+      status: row.status,
+      poolId: row.poolId ?? null,
+      fromNumber: row.fromNumber,
+      stepCount: row.stepCount,
+      options: row.options,
+      steps,
+    };
   });
 }
 

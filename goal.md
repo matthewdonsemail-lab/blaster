@@ -1,63 +1,53 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-04T04:51:53Z
-commit: feat: transition to Convex-only sequence draft and resume lifecycle with atomic pool creation
+updated: 2026-10-04T06:40:00Z
+commit: fix: stop the sequence read path from reporting steps it does not have
 -->
 
-The running scope for the number-pool objective. `scripts/check-goal.mjs` refuses
-a push unless this file is a current outline — updated within 20 minutes, naming
-the commit message, the files changed, and the task list. Refresh it with
+The running scope for the outbound-send correctness objective, opened by the
+first proven live 3-step send. `scripts/check-goal.mjs` refuses a push unless
+this file is a current outline - updated within 20 minutes, naming the commit
+message, the files changed, and the task list. Refresh it with
 `node scripts/check-goal.mjs --stamp` right before pushing.
 
 ## Objective
 
-A number pool is the outbound sending unit: a sequence works a pool in order,
-inside each number's rate budget and the deployment's send rate limiter, and the
-inbox, the API, the MCP server, and the CLI all reflect what the pool actually
-did. The work is complete when a prospect texted from a pool number has a thread
-that resolves to its campaign, replies stop the sequence, and no send can outrun
-the per-number or account ceiling.
+What Blaster prints about a sequence is what Blaster stored. The live send of
+2026-10-04 proved the send path works end to end and exposed the read path
+lying about it: `GET /api/sequences/:id` narrowed the Convex row to four fields
+and dropped the steps, so `blaster sequence show` and `blaster sequence run`
+fell back to a placeholder sequence, and `blaster sequence new` let a resumed
+draft in Convex silently override the steps the operator had just passed. The
+work is complete when a sequence read returns its steps, an explicit flag beats
+a resumed draft, and a failed read is reported as a failure rather than
+described with content nobody wrote.
 
 ## Files changed
 
-- .agents/skills/domain-modeling/SKILL.md
-- GLOSSARY.md
-- apps/api/src/index.ts
 - apps/api/src/lib/convex/helpers/client.ts
-- apps/api/src/lib/convex/index.ts
-- convex/_generated/api.d.ts
-- convex/http/sequence.ts
-- convex/pool/mutations.ts
-- convex/pool/types.ts
-- convex/schema/sequences.ts
-- convex/sequence/drafts.ts
-- convex/sequence/mutations.ts
-- docs/convex-naming-conventions.md
-- docs/naming-conventions.md
+- apps/api/test/convex-get-sequence.test.ts
+- apps/api/test/sequence-detail-route.test.ts
+- docs/production-readiness.md
 - goal.md
-- lefthook.yml
-- package.json
-- packages/blaster-cli/src/cli/index.ts
-- packages/blaster-cli/src/cli/pools.ts
-- packages/blaster-cli/src/cli/sequence-store.ts
 - packages/blaster-cli/src/cli/sequence.ts
 - packages/blaster-cli/test/sequence-drafts.test.ts
-- packages/blaster-cli/test/sequence-menu.test.ts
-- packages/blaster-mcp/src/mcp/index.ts
 - packages/core/src/blaster/api/helpers/client.ts
 - packages/core/src/blaster/api/types.ts
-- packages/core/src/blaster/capabilities/helpers/index.ts
-- packages/core/src/blaster/capabilities/helpers/registry.ts
-- packages/core/src/blaster/capabilities/index.ts
-- packages/core/src/blaster/capabilities/types.ts
-- packages/core/src/index.ts
-- packages/core/src/pipeline/sequence/helpers/builder.ts
-- packages/core/test/capabilities.test.ts
-- plugins/blaster/skills/sequences/SKILL.md
-- scripts/check-surfaces.mjs
+- packages/core/test/blaster-api-client.test.ts
 
 ## Task
+
+- [x] Live proof recorded: 3 steps at 0s/30s/30s delivered to one recipient from `+12724470148`, with the Convex and Telnyx ids, in `docs/production-readiness.md` section 5
+- [x] The 10DLC claim corrected: the missing messaging campaign did not block delivery, so the readiness doc no longer asserts that it does
+- [x] `getSequenceById` returns the full row including `steps`, sorted by `order`
+- [x] `SequenceDetail` in `@blaster/core`, and the API client typed against it instead of a four-field summary
+- [x] `blaster sequence show` and `blaster sequence run` report a failed read instead of printing `+10000000000` and a fake step
+- [x] `blaster sequence new`: an explicit `--steps` overrides a resumed Convex draft, and says so
+- [x] Regression tests for all three (`convex-get-sequence`, `sequence-detail-route`, `blaster-api-client`, `sequence-drafts`)
+- [x] Full `pnpm check` green: 727 tests, typecheck, lint, secrets, conventions, surfaces
+
+## Backlog carried forward from the pool objective
 
 - [x] `convex/pool/` domain: the `poolNumbers` relation, per-number rate state, internal `consumeSender`, cursor remap
 - [x] `packages/core/src/pipeline/pool/`: pure selection and cursor math, unit-tested

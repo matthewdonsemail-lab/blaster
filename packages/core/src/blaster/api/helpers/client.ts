@@ -39,6 +39,7 @@ import {
   type SentMessage,
   type SendResolution,
   type SequenceDraftRecord,
+  type SequenceDetail,
   type SequenceOption,
   type SetSequencePoolInput,
   type SuppressionRow,
@@ -109,7 +110,7 @@ export interface BlasterApiClient {
   /** Sequences, for a pool-assignment picker. */
   listSequences(): Promise<SequenceOption[]>;
   /** One sequence with its steps and options. */
-  getSequence(sequenceId: string): Promise<{ _id: string; name: string; status: string; poolId: string | null } | null>;
+  getSequence(sequenceId: string): Promise<SequenceDetail | null>;
   /** Register a sequence with steps and options in one validated call. */
   registerSequence(input: RegisterSequenceInput): Promise<RegisterSequenceResult>;
   /** Activate a sequence. */
@@ -387,10 +388,7 @@ export function createBlasterApiClient(options: BlasterApiClientOptions): Blaste
     },
 
     async getSequence(sequenceId) {
-      return get<{ _id: string; name: string; status: string; poolId: string | null } | null>(
-        `/api/sequences/${encodeURIComponent(sequenceId)}`,
-        {},
-      );
+      return get<SequenceDetail | null>(`/api/sequences/${encodeURIComponent(sequenceId)}`, {});
     },
 
     registerSequence(input) {

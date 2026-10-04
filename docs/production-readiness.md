@@ -54,7 +54,19 @@ The test recipient is a team member's prospect record in Twenty. Success criteri
 5. A STOP suppresses the person and nothing further sends.
 6. The prospect-to-lead promotion keeps the same conversation.
 
-Status: enrolled and queued on the dev deployment; waiting for the next allowed send window. Items 1 to 6 are `open` until run.
+**Items 1 to 3 are `proven` on the dev deployment (2026-10-04).** Sequence `abel-live-3step`, Convex sequence id `jx7c05cps5t3p8b1yyqq24q87h8fnrcb`, enrollment `jn77vf8kfsjbb587ta5tzqtskx8fn41g`, sending number `+12724470148`, one recipient `+15702355822` enrolled from `agencyProspects` `7b6db9a8-1964-4354-b440-404b968d66e5` via `blaster sequence enroll --filters`. Steps at `0s`, `30s`, `30s`:
+
+| Step | Blaster recorded | Telnyx message id | Telnyx status | Carrier |
+| --- | --- | --- | --- | --- |
+| 1 | `06:12:31Z sent` | `4031a105-8aef-4c5f-93f8-6460afb3933f` | `delivered` | BOOST SUBSCRIBERCO L.L.C. |
+| 2 | `06:13:16Z sent` | `4031a105-8b9a-4e2b-a801-841265e7e724` | `delivered` | BOOST SUBSCRIBERCO L.L.C. |
+| 3 | `06:14:01Z sent` | `4031a105-8c49-452d-b2f0-835cd4f81a9a` | `delivered` | BOOST SUBSCRIBERCO L.L.C. |
+
+Cost $0.0085 per message, `traffic_type: A2P`. The first attempt was held by quiet hours (`next 12:10:31Z`, 02:00 America/New_York); the sequence was rebuilt with `--quiet-hours-override`, which is what the recorded run used. The real gap between 30s configured and 45s observed is the dispatcher's cron tick, not the delay.
+
+Items 4 to 6 are `open`: no reply, STOP, or prospect-to-lead promotion has been exercised against a live carrier.
+
+**The 10DLC gate did not block delivery, and the readiness table must say so.** `+12724470148` has no messaging campaign attached to its profile (`messaging_campaign_id: null`, empty `messaging_campaigns` on profile `4001a0b6-245d-4e4d-9fdd-bbbf4d6344d9`) and `blaster phones compliance` reports `Brand: none`, `Campaign: none`. All three messages still delivered. The local gate in row 1 of section 3 therefore describes a rule Blaster enforces, not a condition Telnyx enforced on this account. Registration is still the right thing to have before a real cold list, and the gate should still refuse to call the number sendable — but a claim that the missing campaign makes sends fail is not supported by this evidence, and must not be repeated.
 
 ## 6. Documentation
 
