@@ -9,6 +9,7 @@ import { stepFieldsValidator } from "./types.js";
 // Aliased: the query below is addressed as `loadRunContext`, so importing the
 // helper under the same name would shadow it and recurse into itself.
 import { dueEnrollmentIds, loadRunContext as readRunContext } from "./helpers.js";
+import { readSequenceReport } from "./report.js";
 import { DEFAULT_LIST_LIMIT, MAX_LIST_LIMIT, clamp } from "./utils.js";
 
 /**
@@ -92,6 +93,16 @@ export const listEnrollments = query({
       .take(args.limit ?? 100);
     return rows;
   },
+});
+
+/**
+ * Per-step reporting for one sequence: how many sends and replies each step got,
+ * and the enrollment status counts. Attribution relies on the stamps from
+ * `applySentOutcome`, so messages sent before stamping existed are not counted.
+ */
+export const sequenceReport = query({
+  args: { sequenceId: v.id("sequences") },
+  handler: async (ctx, args) => readSequenceReport(ctx, args.sequenceId),
 });
 
 /** Enrollments whose next step is due.
