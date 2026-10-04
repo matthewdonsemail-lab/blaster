@@ -155,6 +155,10 @@ export const runEnrollmentStep = internalAction({
         phoneNumber: fromNumber,
       });
       if (phoneDoc) {
+        // The number's own bound profile, as the pinned and pool branches use.
+        // Without it a fixed-number sequence fell back to the country default and
+        // was refused as "no-profile-for-country" even with a profile bound.
+        numberProfileId = phoneDoc.messagingProfileId ?? numberProfileId;
         const docReadiness = checkDocReadiness(phoneDoc, now);
         if (!docReadiness.ready) {
           senderReadiness = { ready: false, reason: docReadiness.reason };
