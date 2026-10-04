@@ -22,8 +22,8 @@
 %%   3. The auth gate is per-route, not per-app. Three families of `/api` route
 %%      are deliberately ungated, and drawing them as gated would be a lie that
 %%      costs someone an afternoon.
-%% fact: mcp-tools 42
-%% fact: registry-entries 52
+%% fact: mcp-tools 50
+%% fact: registry-entries 54
 flowchart TB
   subgraph callers["Callers"]
     HUMAN["Operator, at a terminal"]
@@ -42,7 +42,7 @@ flowchart TB
       CLIGRP["Groups: sequence, pool, phones,<br/>numbers, accounts, suppress,<br/>enrollments, inbox, conversation"]
     end
 
-    subgraph mcpsurf["2. MCP - packages/blaster-mcp, 42 tools"]
+    subgraph mcpsurf["2. MCP - packages/blaster-mcp, 50 tools"]
       MCPSTDIO["stdio transport<br/>startServer(), spawned by plugins/blaster"]
       MCPHTTP["Streamable HTTP<br/>createHostedMcpHandler()<br/>mounted at ALL /mcp"]
       MCPHAND["tools/list and tools/call<br/>TOOL_DEFINITIONS is the source"]
@@ -61,7 +61,7 @@ flowchart TB
   end
 
   subgraph core["Domain library - packages/core, the only place a rule lives"]
-    REGISTRY[("capability registry<br/>52 entries")]
+    REGISTRY[("capability registry<br/>54 entries")]
     CLIENT["BlasterApiClient<br/>~40 methods,<br/>errors normalised"]
     CORELIB["twenty, telnyx, pipeline,<br/>guidance, platform"]
   end

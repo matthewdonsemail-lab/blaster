@@ -34,7 +34,7 @@ flowchart TB
       CLIGRP["Groups: sequence, pool, phones,<br/>numbers, accounts, suppress,<br/>enrollments, inbox, conversation"]
     end
 
-    subgraph mcpsurf["2. MCP - packages/blaster-mcp, 42 tools"]
+    subgraph mcpsurf["2. MCP - packages/blaster-mcp, 50 tools"]
       MCPSTDIO["stdio transport<br/>startServer(), spawned by plugins/blaster"]
       MCPHTTP["Streamable HTTP<br/>createHostedMcpHandler()<br/>mounted at ALL /mcp"]
       MCPHAND["tools/list and tools/call<br/>TOOL_DEFINITIONS is the source"]
@@ -53,7 +53,7 @@ flowchart TB
   end
 
   subgraph core["Domain library - packages/core, the only place a rule lives"]
-    REGISTRY[("capability registry<br/>52 entries")]
+    REGISTRY[("capability registry<br/>54 entries")]
     CLIENT["BlasterApiClient<br/>~40 methods,<br/>errors normalised"]
     CORELIB["twenty, telnyx, pipeline,<br/>guidance, platform"]
   end
@@ -245,10 +245,10 @@ packages/core        The domain. Every business rule lives here
   src/pipeline/breakdown   The breakdown builder and notification rules
   src/pipeline/sequence    The enrollment state machine and its rules
   src/guidance/prompts     The eight deterministic reply templates
-  src/blaster/capabilities The capability registry, 52 entries
+  src/blaster/capabilities The capability registry, 54 entries
   src/platform/env         The environment manifest reader
 packages/blaster-cli  The blaster binary
-packages/blaster-mcp  The blaster-mcp server, 42 tools over two transports
+packages/blaster-mcp  The blaster-mcp server, 50 tools over two transports
 plugins/blaster      Plugin manifest, MCP registration, five operator skills
 config/env-vars.json  The environment contract every surface reads
 docs/                Architecture, and the Mermaid sources in docs/diagrams/

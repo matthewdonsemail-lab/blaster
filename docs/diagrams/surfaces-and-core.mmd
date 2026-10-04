@@ -7,7 +7,7 @@
 %% every surface. What must never differ is the reverse — a CLI command, an MCP
 %% tool or a route that exists but is not in the registry. `scripts/check-surfaces.mjs`
 %% rejects that in both directions.
-%% fact: registry-entries 52
+%% fact: registry-entries 54
 flowchart LR
   subgraph surfaces["Surfaces - no business rules"]
     A["blaster breakdown"]
@@ -42,7 +42,7 @@ flowchart LR
   PROF -.-> NOTE
 
   subgraph registry["The registry is the contract"]
-    REG[("capabilities registry<br/>52 entries, each declaring its<br/>cli, mcp and http surface")]
+    REG[("capabilities registry<br/>54 entries, each declaring its<br/>cli, mcp and http surface")]
     GATE["scripts/check-surfaces.mjs<br/>a pre-push gate"]
   end
 
