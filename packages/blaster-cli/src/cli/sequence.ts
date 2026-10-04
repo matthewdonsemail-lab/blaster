@@ -50,7 +50,8 @@ export interface SequenceContext {
 export const SEQUENCE_USAGE = `Usage: blaster sequence <action> [name]
 
   new [name]     Build a sequence interactively with Convex draft checkpointing
-                 Flags: --from <number>, --pool <id>, --campaign <id>, --activate
+                 Flags: --from <number>, --pool <id>, --campaign <id>, --activate,
+                 --steps '[{"text":"hi","delay":"0"},{"text":"again","delay":"30s"}]'
   activate <id>  Activate a sequence in Convex for sending
   list           List sequences and unfinished drafts in Convex
   show <name>    The steps, plus a per-recipient plan
@@ -71,6 +72,51 @@ so work can be resumed across sessions without local file drift.`;
 export const RUNNER_GAPS: readonly string[] = [
   "Active runner: sequences are processed via Convex cron jobs and actions with 10DLC compliance verification, rate limiting, and pool rotation.",
 ];
+
+/**
+ * A wait as the operator writes it: `30s`, `5m`, `2h`, `1d`, or a bare number of
+ * hours. Steps store hours, so a 30-second test step is 30 / 3600 hours. Returns
+ * null for anything else, so a typo is refused instead of becoming a zero wait.
+ */
+export function parseDelayHours(input: string | number): number | null {
+  if (typeof input === "number") return Number.isFinite(input) && input >= 0 ? input : null;
+  const match = /^\s*(\d+(?:\.\d+)?)\s*([smhd]?)\s*$/i.exec(input);
+  if (!match) return null;
+  const value = Number(match[1]);
+  const unit = (match[2] || "h").toLowerCase();
+  const perHour = { s: 1 / 3600, m: 1 / 60, h: 1, d: 24 }[unit as "s" | "m" | "h" | "d"];
+  return value * perHour;
+}
+
+/**
+ * Steps from `--steps '<json>'`: an array of `{ text, delay?, delayHours?, isStop? }`.
+ * `delay` takes the units above; `delayHours` is a plain number. A problem is
+ * returned as a message, never thrown, so the caller can print it and exit 1.
+ */
+export function parseStepsFlag(raw: string): { steps: SequenceStepDraft[] } | { error: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { error: "--steps must be a JSON array" };
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) return { error: "--steps must be a non-empty JSON array" };
+  const steps: SequenceStepDraft[] = [];
+  for (const [index, item] of parsed.entries()) {
+    const row = item as { text?: unknown; delay?: unknown; delayHours?: unknown; isStop?: unknown };
+    const label = `step ${index + 1}`;
+    if (!row || typeof row !== "object") return { error: `${label}: expected an object` };
+    const isStop = row.isStop === true;
+    if (!isStop && (typeof row.text !== "string" || row.text.trim() === "")) {
+      return { error: `${label}: text is required` };
+    }
+    const rawDelay = row.delay ?? row.delayHours ?? 0;
+    const delayHours = typeof rawDelay === "string" || typeof rawDelay === "number" ? parseDelayHours(rawDelay) : null;
+    if (delayHours === null) return { error: `${label}: delay must be like 30s, 5m, 2h, 1d or a number of hours` };
+    steps.push({ text: typeof row.text === "string" ? row.text : "", delayHours, isStop });
+  }
+  return { steps };
+}
 
 export function readRecipients(flags: Map<string, string | boolean>): Recipient[] {
   const raw = flags.get("recipients");
@@ -367,6 +413,15 @@ async function newDraft(ctx: SequenceContext): Promise<number> {
   }
 
   // 3. Sequence steps
+  const stepsFlag = ctx.flags.get("steps");
+  if (typeof stepsFlag === "string" && stepsFlag && steps.length === 0) {
+    const parsedSteps = parseStepsFlag(stepsFlag);
+    if ("error" in parsedSteps) {
+      console.error(`blaster sequence new: ${parsedSteps.error}`);
+      return 1;
+    }
+    steps.push(...parsedSteps.steps);
+  }
   if (interactive && steps.length === 0) {
     for (;;) {
       const text = await askText(
@@ -382,13 +437,13 @@ async function newDraft(ctx: SequenceContext): Promise<number> {
         if (confirm === "yes") steps.push({ text: "", delayHours: 0, isStop: true });
         break;
       }
-      const delay = await askText("Hours to wait before this message", {
+      const delay = await askText("Wait before this message (30s, 5m, 2h, 1d; a bare number is hours)", {
         defaultValue: steps.length === 0 ? "0" : "48",
       });
       if (delay === null) return 1;
-      const delayHours = Number(delay || "0");
-      if (!Number.isFinite(delayHours) || delayHours < 0) {
-        console.error("The delay must be zero or more hours.");
+      const delayHours = parseDelayHours(delay || "0");
+      if (delayHours === null) {
+        console.error("The delay must look like 30s, 5m, 2h, 1d, or be a number of hours.");
         return 1;
       }
       steps.push({ text, delayHours, isStop: false });
