@@ -52,8 +52,8 @@ export const WHOAMI_USAGE = "Usage: blaster whoami [--api-url <url>] [--json]";
  * .blaster/config.json). Keep these on the production domain; local work
  * passes --web-url/--api-url explicitly.
  */
-const DEFAULT_WEB_URL = "https://blaster-web-nine.vercel.app";
-const DEFAULT_API_URL = "https://blaster-web-nine.vercel.app";
+const DEFAULT_WEB_URL = "https://blaster.listeningkit.com";
+const DEFAULT_API_URL = "https://blaster.listeningkit.com";
 /**
  * How long the loopback exchange waits before giving up.
  *

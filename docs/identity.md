@@ -171,7 +171,7 @@ TWENTY_API_KEY=...                    # bearer, for /rest and /graphql
 
 TWENTY_OAUTH_CLIENT_ID=...            # public PKCE client, no secret needed
 TWENTY_OAUTH_CLIENT_SECRET=           # unset for a public client
-TWENTY_OAUTH_REDIRECT_URI=https://blaster-web-nine.vercel.app/callback
+TWENTY_OAUTH_REDIRECT_URI=https://blaster.listeningkit.com/callback
 TWENTY_OAUTH_SCOPE=api profile
 
 # Only when an auth-guard fronts the instance:
