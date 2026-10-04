@@ -74,7 +74,7 @@ describe("checkCliHandoff", () => {
 
 describe("buildBrowserCommand", () => {
   const url =
-    "https://blaster-web-nine.vercel.app/login?state=st-1&code_challenge=ch-1&exchange=" +
+    "https://blaster.listeningkit.com/login?state=st-1&code_challenge=ch-1&exchange=" +
     encodeURIComponent("http://127.0.0.1:5555/exchange");
 
   test("Windows goes through ShellExecute with the URL base64-encoded", () => {
