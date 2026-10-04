@@ -1,7 +1,7 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-04T06:40:00Z
+updated: 2026-10-04T06:32:39Z
 commit: fix: stop the sequence read path from reporting steps it does not have
 -->
 
