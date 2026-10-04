@@ -86,8 +86,9 @@ import {
   setSequenceStatus,
   setSuppression,
 } from "./lib/convex/index.ts";
+import { createHostedMcpHandler, withApiClient } from "../../../packages/blaster-mcp/src/mcp/index.ts";
 import { requireOperator, resolveOperatorActor } from "./lib/auth/operator/index.ts";
-import { AGENCY_PROSPECTS_OBJECT, broadcastReply, classifyMessageRules, promoteProspectToLead } from "@blaster/core";
+import { AGENCY_PROSPECTS_OBJECT, broadcastReply, classifyMessageRules, createBlasterApiClient, promoteProspectToLead } from "@blaster/core";
 import {
   eventTypeOf,
   handleCallEvent,
@@ -1004,6 +1005,26 @@ accounts.post("/accounts/assign", requireOperator, async (c) => {
 });
 
 app.route("/api", accounts);
+
+/**
+ * The MCP server over Streamable HTTP, for Claude Code, Codex and other clients
+ * that can send a bearer header. Same tool table as the stdio server.
+ *
+ * Gated by the operator check, so the caller is a live Twenty operator. Each tool
+ * call runs as that operator: the request's own token is what the in-process API
+ * client sends back to this API, so every route's own checks still apply.
+ *
+ * Not yet usable from ChatGPT or claude.ai connectors: those start an OAuth flow
+ * with dynamic client registration against this server, which Blaster does not
+ * provide (Twenty is the authorization server). See docs/production-readiness.md.
+ */
+const mcpHandler = createHostedMcpHandler();
+app.all("/mcp", requireOperator, async (c) => {
+  const token = /^Bearer\s+(.+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
+  if (!token) return c.json({ error: "Bearer token required" }, 401);
+  const baseUrl = new URL(c.req.url).origin;
+  return withApiClient(createBlasterApiClient({ baseUrl, accessToken: token }), () => mcpHandler.fetch(c.req.raw));
+});
 
 /**
  * Enroll prospects into a sequence straight from Twenty.
