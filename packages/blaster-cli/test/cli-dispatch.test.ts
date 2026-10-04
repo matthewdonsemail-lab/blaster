@@ -37,3 +37,19 @@ describe("blaster dispatch passes the action through", () => {
     }
   });
 });
+
+describe("the sequence and enrollments commands the lifecycle relies on", () => {
+  it("sequence cancel and status reach their handlers (they asked for an id)", () => {
+    for (const action of ["cancel", "status"]) {
+      const result = run(["sequence", action]);
+      expect(result.stderr, action).toContain("a sequence id is required");
+    }
+  });
+
+  it("enrollments cancel, pause and resume reach their handlers", () => {
+    for (const action of ["cancel", "pause", "resume"]) {
+      const result = run(["enrollments", action]);
+      expect(result.stderr, action).toContain("an enrollment id is required");
+    }
+  });
+});

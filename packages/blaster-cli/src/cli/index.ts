@@ -344,7 +344,7 @@ async function main(): Promise<number> {
       if (action === "enroll") return await sequenceEnroll(positional[1], flags, json);
       if (action === "activate") return await sequenceActivate(positional[1], flags, json);
       // Everything else is the recorded-draft lifecycle: new/list/show/edit/run/rm.
-      const known = ["new", "create", "list", "ls", "show", "edit", "run", "dry-run", "rm", "delete"];
+      const known = ["new", "create", "list", "ls", "show", "edit", "run", "dry-run", "rm", "delete", "cancel", "status"];
       if (action !== undefined && known.includes(action)) {
         return await sequenceMain(sequenceContext(flags, json), action, positional[1]);
       }
