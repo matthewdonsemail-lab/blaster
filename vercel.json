@@ -5,7 +5,8 @@
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/handler" },
     { "source": "/health", "destination": "/api/handler" },
-    { "source": "/((?!api/|health$).*)", "destination": "/index.html" }
+    { "source": "/mcp", "destination": "/api/handler" },
+    { "source": "/((?!api/|health$|mcp$).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
