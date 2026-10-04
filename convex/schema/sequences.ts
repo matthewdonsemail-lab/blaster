@@ -125,6 +125,8 @@ export const sequenceTables = {
     lastSentAt: v.optional(v.number()),
     /** Set when a send was skipped, so an operator can see why. */
     lastSkipReason: v.optional(v.string()),
+    /** Telnyx error code of the last rejected send, so expiry, filtering and rate limits can be told apart. */
+    lastErrorCode: v.optional(v.string()),
     /**
      * Consecutive failed attempts at the current step. The machine's retry
      * ceiling only means something across restarts if the count is persisted:
@@ -142,7 +144,11 @@ export const sequenceTables = {
      */
     doNotContact: v.optional(v.boolean()),
   })
+    // Kept alongside `sequenceRecipient`: reads of one sequence rely on its creation-time order.
+    // eslint-disable-next-line @convex-dev/no-duplicate-indexes
     .index("sequenceId", ["sequenceId"])
+    // One live enrollment per prospect per sequence: enrollment checks this before inserting.
+    .index("sequenceRecipient", ["sequenceId", "recipientId"])
     .index("nextDueAt", ["nextDueAt"])
     // The runner's only queue read: active and already due, in one index range.
     // Status first, then the range, so `dueEnrollments` never scans the table —

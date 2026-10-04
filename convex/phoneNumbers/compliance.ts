@@ -34,6 +34,7 @@ export function checkDocReadiness(
     campaignUseCase: doc.campaignUseCase,
     assignmentStatus: doc.assignmentStatus,
     carrierProvisioningStatus: doc.carrierProvisioningStatus,
+    tollFreeVerification: doc.tollFreeVerification,
     complianceCheckedAt: doc.complianceCheckedAt,
     now,
   });

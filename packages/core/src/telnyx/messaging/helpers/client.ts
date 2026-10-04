@@ -17,14 +17,37 @@ export type TelnyxClient = InstanceType<typeof Telnyx>;
 
 export class TelnyxError extends Error {
   readonly status: number;
+  /** Telnyx's own error code (e.g. "40010"), when the response carried one. */
+  readonly code?: string;
 
-  constructor(status: number, detail: string) {
+  constructor(status: number, detail: string, code?: string) {
     // The API key is never included in the message, only the provider's own
     // text, so an error can be logged without leaking the credential.
     super(`Telnyx ${status}: ${detail}`);
     this.name = "TelnyxError";
     this.status = status;
+    if (code) this.code = code;
   }
+}
+
+/**
+ * Telnyx's error code from an SDK error, wherever the SDK put it. The API body is
+ * `{ errors: [{ code, title, detail }] }`; the SDK may expose that array on the
+ * error itself or under `.error`. Returns undefined rather than guessing.
+ */
+export function telnyxErrorCodeOf(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined;
+  const holder = error as { errors?: unknown; error?: { errors?: unknown } };
+  const list = Array.isArray(holder.errors)
+    ? holder.errors
+    : Array.isArray(holder.error?.errors)
+      ? holder.error.errors
+      : [];
+  const first = list[0] as { code?: unknown } | undefined;
+  const code = first?.code;
+  if (typeof code === "string" && code !== "") return code;
+  if (typeof code === "number") return String(code);
+  return undefined;
 }
 
 /**
@@ -38,7 +61,7 @@ export function toTelnyxError(error: unknown): TelnyxError {
       ? (error as { status: number }).status
       : 500;
   const detail = error instanceof Error ? error.message : String(error);
-  return new TelnyxError(status, detail.slice(0, 300));
+  return new TelnyxError(status, detail.slice(0, 300), telnyxErrorCodeOf(error));
 }
 
 /**

@@ -49,6 +49,23 @@ export const HIGH_STAKES_THRESHOLD = 0.85;
 /** The highest confidence the rule baseline may claim. */
 export const RULES_CONFIDENCE_CEILING = 0.8;
 
+/**
+ * The whole message is a carrier opt-out keyword (CTIA standard set), in any
+ * case and with any punctuation. Certain: no model, no continuation.
+ */
+const OPT_OUT_KEYWORDS = new Set([
+  "stop",
+  "stopall",
+  "unsubscribe",
+  "cancel",
+  "end",
+  "quit",
+  "optout",
+]);
+
+/** An opt-out phrase inside a longer message, e.g. "how much? actually stop texting me". */
+export const OPT_OUT_EMBEDDED_CONFIDENCE = 0.9;
+
 const OPT_OUT_PATTERNS = [
   /\bstop\b/,
   /\bunsubscribe\b/,
@@ -98,8 +115,14 @@ export function classifyMessageRules(text: string): MessageClassification {
   const normalized = text.toLowerCase().trim();
   if (!normalized) return { state: "unknown", confidence: 0 };
 
-  if (OPT_OUT_PATTERNS.some((pattern) => pattern.test(normalized))) {
+  if (OPT_OUT_KEYWORDS.has(normalized.replace(/[^a-z]/g, ""))) {
     return { state: "opt_out", confidence: 1 };
+  }
+  if (OPT_OUT_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    // Still suppressed: failing to honour an opt-out is the costly error. The
+    // lower confidence marks it as embedded in other text, which is the case
+    // the confidence-based review (not built yet) will look at.
+    return { state: "opt_out", confidence: OPT_OUT_EMBEDDED_CONFIDENCE };
   }
   if (OBJECTION_PATTERNS.some((pattern) => pattern.test(normalized))) {
     return { state: "objection", confidence: RULES_CONFIDENCE_CEILING };

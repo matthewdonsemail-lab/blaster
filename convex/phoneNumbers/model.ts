@@ -37,6 +37,7 @@ export const phoneInput = v.object({
   campaignUseCase: v.optional(v.string()),
   assignmentStatus: v.optional(v.string()),
   carrierProvisioningStatus: v.optional(v.string()),
+  tollFreeVerification: v.optional(v.string()),
   complianceCheckedAt: v.optional(v.number()),
   complianceSource: v.optional(v.string()),
 });
@@ -66,6 +67,7 @@ export type PhoneInput = {
   campaignUseCase?: string;
   assignmentStatus?: string;
   carrierProvisioningStatus?: string;
+  tollFreeVerification?: string;
   complianceCheckedAt?: number;
   complianceSource?: string;
 };

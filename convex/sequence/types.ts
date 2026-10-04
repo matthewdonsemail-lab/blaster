@@ -171,6 +171,10 @@ export interface RecordStepArgs {
   steps: StepFields[];
   /** Why a send was skipped or failed, so an operator can see the reason. */
   skipReason?: string;
+  /** Telnyx error code on a rejected send. */
+  errorCode?: string;
+  /** On a failed send: false means the same send will fail again, so do not retry. */
+  retryable?: boolean;
   /** Present only when the send is known to have gone out. */
   message?: SentMessage;
 }
@@ -258,7 +262,7 @@ export type RunOutcome =
   | { kind: "sentinel"; reason: string }
   | { kind: "not-claimed"; reason: string }
   | { kind: "sent"; messageId: string }
-  | { kind: "failed"; retryable: boolean; reason: string }
+  | { kind: "failed"; retryable: boolean; reason: string; errorCode?: string }
   | { kind: "ambiguous"; reason: string };
 
 /** One messaging profile this deployment can send with. */
