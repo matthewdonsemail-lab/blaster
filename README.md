@@ -101,6 +101,7 @@ blaster send --to <to> --from <from> --text <text>
 blaster numbers search --country IE     # available Telnyx inventory
 blaster numbers buy --number +353871234567
 blaster numbers owned
+blaster numbers attach --number +12155550101 --state PA --pool <id>   # account, state, profile, pool; prints what it still needs
 blaster phones list
 blaster inbox list --person             # one row per person, pool numbers folded
 blaster inbox show <conversation-id>
@@ -138,7 +139,8 @@ MCP tools: `blaster_breakdown`, `blaster_env`, `blaster_messaging_profile`,
 `blaster_create_pool`, `blaster_add_pool_number`, `blaster_remove_pool_number`,
 `blaster_reorder_pool`, `blaster_set_sequence_pool`,
 `blaster_enroll_recipients`, `blaster_list_suppressions`,
-`blaster_set_suppression`.
+`blaster_set_suppression`, `blaster_attach_number`, `blaster_list_accounts`,
+`blaster_set_account`, `blaster_assign_number_account`.
 
 ## What is inside
 
