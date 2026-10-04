@@ -210,6 +210,10 @@ type ConvexPoolNumber = {
   lastSentAt?: number;
   assignedAt: number;
   removedAt?: number;
+  accountRef?: string;
+  accountStatus?: "active" | "burned" | "disabled" | "unknown" | null;
+  sendable?: boolean;
+  blockedReason?: string;
 };
 
 function toPoolSummary(pool: ConvexPool): PoolSummary {
@@ -239,6 +243,10 @@ function toPoolNumber(row: ConvexPoolNumber): PoolNumberRow {
     lastSentAt: row.lastSentAt ?? null,
     assignedAt: row.assignedAt,
     removedAt: row.removedAt ?? null,
+    ...(row.accountRef ? { accountRef: row.accountRef } : {}),
+    ...(row.accountStatus !== undefined ? { accountStatus: row.accountStatus } : {}),
+    ...(row.sendable !== undefined ? { sendable: row.sendable } : {}),
+    ...(row.blockedReason ? { blockedReason: row.blockedReason } : {}),
   };
 }
 

@@ -54,6 +54,34 @@ export function policyOf(pool: Doc<"pools">) {
   };
 }
 
+/**
+ * What an operator needs to see about one member: which account owns the number
+ * and whether it can send right now, with the reason when it cannot. Reads the
+ * same readiness and account rules selection uses, so the view cannot disagree
+ * with what the pool will actually do.
+ */
+export async function describeMember(
+  ctx: QueryCtx,
+  row: Doc<"poolNumbers">,
+  now: number = Date.now(),
+): Promise<{
+  accountRef?: string;
+  accountStatus: "active" | "burned" | "disabled" | "unknown" | null;
+  sendable: boolean;
+  blockedReason?: string;
+}> {
+  const sender = await senderForRow(ctx, row, now);
+  const number = await ctx.db.get("phoneNumbers", row.phoneNumberId);
+  const accountRef = number?.accountRef;
+  const account = accountRef ? await ctx.db.query("telnyxAccounts").withIndex("ref", (q) => q.eq("ref", accountRef)).unique() : null;
+  return {
+    ...(accountRef ? { accountRef } : {}),
+    accountStatus: accountRef ? (account?.status ?? "unknown") : null,
+    sendable: sender.readiness.ready,
+    ...(sender.readiness.ready ? {} : { blockedReason: sender.readiness.reason }),
+  };
+}
+
 /** Resolve a chosen membership to the number and profile a send needs. */
 export async function senderForRow(
   ctx: QueryCtx,

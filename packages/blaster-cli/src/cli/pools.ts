@@ -12,6 +12,7 @@ import {
   createBlasterApiClient,
   type BlasterApiClient,
   type PoolDetail,
+  type PoolNumberRow,
   type PoolSummary,
   type SendingNumber,
   type SequenceOption,
@@ -142,10 +143,33 @@ function formatPool(pool: PoolDetail): string {
   for (const number of pool.numbers) {
     lines.push(
       `  ${String(number.order).padStart(3)}  ${number.phoneNumber}  ` +
-        `[${number.status}] sentToday=${number.sentToday} next=${new Date(number.nextAvailableAt).toISOString()}`,
+        `[${number.status}] sentToday=${number.sentToday} next=${new Date(number.nextAvailableAt).toISOString()}` +
+        `  ${describeSender(number)}`,
     );
   }
+  const mix = accountMix(pool.numbers);
+  if (mix) lines.push(`accounts: ${mix}`);
   return lines.join("\n");
+}
+
+/** `acct=<ref>` or `acct=default`, then `ok` or `BLOCKED (reason)`. Empty when the API sent no detail. */
+export function describeSender(number: PoolNumberRow): string {
+  if (number.sendable === undefined) return "";
+  const account = `acct=${number.accountRef ?? "default"}${
+    number.accountStatus && number.accountStatus !== "active" ? ` (${number.accountStatus})` : ""
+  }`;
+  return number.sendable ? `${account} ok` : `${account} BLOCKED (${number.blockedReason ?? "unknown"})`;
+}
+
+/** e.g. `acct-a x2, default x1`, counting only active members. */
+export function accountMix(numbers: PoolNumberRow[]): string {
+  const counts = new Map<string, number>();
+  for (const number of numbers) {
+    if (number.status !== "active" || number.sendable === undefined) continue;
+    const key = number.accountRef ?? "default";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts].map(([key, count]) => `${key} x${count}`).join(", ");
 }
 
 /**
@@ -329,6 +353,12 @@ export async function poolsMain(
           ...(orderRaw === undefined ? {} : { order: Number(orderRaw) }),
         });
         console.log(json ? asJson(pool) : formatPool(pool));
+        const added = pool.numbers.find((row) => row.phoneNumber === phoneNumber);
+        if (!json && added && added.sendable === false) {
+          console.error(
+            `warning: ${phoneNumber} was added but cannot send now (${added.blockedReason ?? "unknown"}); the pool will skip it.`,
+          );
+        }
         return 0;
       }
 
