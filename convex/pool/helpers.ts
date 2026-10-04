@@ -3,6 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel.js";
 import { availableAt, selectSender } from "../../packages/core/src/pipeline/pool/index.js";
 import { memberState, nonNegative } from "./utils.js";
 import { accountUsability } from "../telnyxAccounts/model.js";
+import { checkStateMatch } from "../../packages/core/src/pipeline/sequence/compliance.js";
 import { checkDocReadiness, type SenderReadiness } from "../phoneNumbers/compliance.js";
 
 /**
@@ -21,13 +22,15 @@ export interface PoolSender {
   messagingProfileId?: string;
   order: number;
   readiness: SenderReadiness;
+  /** False when the same-state rule forbids this number texting the recipient; undefined when no recipient was given. */
+  stateAllowed?: boolean;
 }
 
 /** What a pool can offer right now, and when it next can when it offers none. */
 export interface SenderAvailability {
   sender: PoolSender | null;
   soonestNextAvailableAt: number | null;
-  blockedReason?: "no-compliant-sender" | "pool-empty" | "pool-rate-limited" | null;
+  blockedReason?: "no-compliant-sender" | "no-state-matching-sender" | "pool-empty" | "pool-rate-limited" | null;
 }
 
 /**
@@ -87,6 +90,7 @@ export async function senderForRow(
   ctx: QueryCtx,
   row: Doc<"poolNumbers">,
   now: number = Date.now(),
+  recipientPhone?: string | null,
 ): Promise<PoolSender> {
   const number = await ctx.db.get("phoneNumbers", row.phoneNumberId);
   let readiness = checkDocReadiness(number, now);
@@ -102,6 +106,18 @@ export async function senderForRow(
     ...(number?.messagingProfileId ? { messagingProfileId: number.messagingProfileId } : {}),
     order: row.order,
     readiness,
+    ...(recipientPhone
+      ? {
+          stateAllowed: (() => {
+            const result = checkStateMatch({
+              senderPhone: row.phoneNumber,
+              senderState: number?.stateCode,
+              recipientPhone,
+            });
+            return !result.applies || result.match;
+          })(),
+        }
+      : {}),
   };
 }
 
@@ -137,6 +153,7 @@ export async function availableSender(
   ctx: QueryCtx,
   poolId: Id<"pools">,
   now: number,
+  recipientPhone?: string | null,
 ): Promise<SenderAvailability> {
   const pool = await ctx.db.get("pools", poolId);
   if (!pool || pool.status !== "active") return { sender: null, soonestNextAvailableAt: null };
@@ -151,16 +168,25 @@ export async function availableSender(
   const eligibleRows = await Promise.all(
     activeRows.map(async (row) => ({
       row,
-      sender: await senderForRow(ctx, row, now),
+      sender: await senderForRow(ctx, row, now, recipientPhone),
     })),
   );
-  const sendable = eligibleRows.filter(({ sender }) => sender.readiness.ready);
-  if (sendable.length === 0) {
+  const readyRows = eligibleRows.filter(({ sender }) => sender.readiness.ready);
+  if (readyRows.length === 0) {
     return {
       sender: null,
       soonestNextAvailableAt: null,
       blockedReason: "no-compliant-sender",
     };
+  }
+
+  // Same-state rule: only numbers that may text this recipient are candidates, so a
+  // multi-state pool picks the matching number rather than the next in order.
+  const sendable = recipientPhone
+    ? readyRows.filter(({ sender }) => sender.stateAllowed !== false)
+    : readyRows;
+  if (sendable.length === 0) {
+    return { sender: null, soonestNextAvailableAt: null, blockedReason: "no-state-matching-sender" };
   }
 
   const policy = policyOf(pool);

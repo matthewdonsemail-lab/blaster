@@ -62,6 +62,22 @@ export const setNumberAccount = mutation({
   },
 });
 
+/** Record the state a number is owned in (USPS code), or clear it to fall back to its area code. */
+export const setNumberState = mutation({
+  args: { phoneNumber: v.string(), stateCode: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query("phoneNumbers")
+      .withIndex("phoneNumber", (q) => q.eq("phoneNumber", args.phoneNumber))
+      .unique();
+    if (!row) throw new Error(`unknown phone number ${args.phoneNumber}`);
+    const stateCode = args.stateCode?.trim().toUpperCase();
+    if (stateCode !== undefined && !/^[A-Z]{2}$/.test(stateCode)) throw new Error("stateCode must be a 2-letter USPS code");
+    await ctx.db.patch("phoneNumbers", row._id, { stateCode });
+    return { phoneNumber: args.phoneNumber, stateCode: stateCode ?? null };
+  },
+});
+
 /** Accounts with their state and whether the deployment has the key set. Never the key. */
 export const listAccounts = query({
   args: {},
