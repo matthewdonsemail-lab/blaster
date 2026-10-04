@@ -13,7 +13,7 @@ What the vendors require (sources at the end):
 | Surface | Requirement | Blaster today |
 | --- | --- | --- |
 | Claude Code, Codex (local) | Stdio MCP server plus plugin manifest | `built`: `plugins/blaster/`, `blaster-mcp` over stdio. Not installed and exercised end to end from a clean machine. |
-| Claude Code, Codex (remote, bearer header) | Streamable HTTP MCP at a URL, `Authorization: Bearer` | `built`: `POST /mcp` on the API, behind the operator gate, tools run as the caller (`apps/api/test/mcp-route.test.ts`). Not deployed: the hosted API predates it. |
+| Claude Code, Codex (remote, bearer header) | Streamable HTTP MCP at a URL, `Authorization: Bearer` | `proven` 2026-10-04: `POST /mcp` on `https://blaster-web-nine.vercel.app`. No token gives 401; with the operator token `tools/list` returns the tool table and `blaster_list_accounts`, `blaster_list_pools`, `blaster_list_suppressions` return real answers as the caller. Route test: `apps/api/test/mcp-route.test.ts`. Needed a `vercel.json` rewrite (#27). |
 | Claude (claude.ai connector) | Remote MCP over Streamable HTTP at a public HTTPS URL; OAuth with redirect `https://claude.ai/api/mcp/auth_callback` | `open`: no remote endpoint |
 | ChatGPT (developer mode / app) | Remote MCP, Streamable HTTP recommended; OAuth 2.1 with protected-resource metadata at `/.well-known/oauth-protected-resource`; per-tool `securitySchemes` | `open`: no remote endpoint |
 
