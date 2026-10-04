@@ -11,7 +11,7 @@ are going out, and discovers otherwise from a prospect.
 ## What works today
 
 <!-- embedded: sequence-runner-tick.mmd -->
-One tick of the runner. The ordering in the middle is the load-bearing part: capacity is claimed before the step is, because a step claim is permanent.
+One tick of the runner. The ordering in the middle is the load-bearing part, and it runs in two places. Inside the machine, sender readiness is tested before eligibility, so a number that cannot send parks the enrollment outright instead of being rescheduled as merely ineligible. In the runner, capacity is claimed before the step is, because a step claim is permanent.
 
 ```mermaid
 flowchart TD
@@ -22,17 +22,49 @@ flowchart TD
 
   subgraph tick["Inside one step - the order is load-bearing"]
     CTX["loadRunContext<br/>one consistent snapshot:<br/>enrollment, steps, sender, recipient"]
-    CTX --> ELIG{"evaluateEligibility<br/>suppression, already replied,<br/>daily cap, profile for country"}
+    CTX --> GUARD{"Enrollment active,<br/>sequence active?"}
+    GUARD -- "no" --> SENTINEL["sentinel: enrollment-<status><br/>or sequence-<status>, send nothing"]
+    GUARD -- "yes" --> CURSOR{"Cursor past the last step,<br/>or on a stop step?"}
+    CURSOR -- "yes" --> DONE["completeEnrollment<br/>the sequence is done, never send it"]
+    CURSOR -- "no" --> NUMBER["resolve the sending number<br/>pinned, or the pool's own order,<br/>or the sequence's fixed number"]
+  end
+
+  subgraph sender["Sender readiness, resolved before any decision"]
+    NUMBER --> READY{"checkDocReadiness<br/>and checkStateMatch"}
+    READY -- "not ready, or states differ" --> PARKSEND["park as awaiting_human<br/>sender-not-ready:reason, or state-mismatch.<br/>Hard block, no fallback."]
+    READY -- "ready" --> MACHINE
+    NUMBER -- "pool has nothing that may send" --> POOLPARK["park or defer:<br/>pool-no-state-matching-sender,<br/>pool-no-compliant-sender, pool-rate-limited,<br/>pool-empty"]
+  end
+
+  subgraph machine["The machine decides the tick, in machine.ts `evaluating.always`"]
+    MACHINE["dryRunEnrollment, then guards in this order"]
+    MACHINE --> SENDERR{"senderNotReady"}
+    SENDERR -- "yes" --> PARK["park as awaiting_human<br/>sender-not-ready:reason"]
+    SENDERR -- "no" --> UNPLACE{"Recipient unplaceable?"}
+    UNPLACE -- "yes" --> PARKZ["park as awaiting_human<br/>unplaceable-recipient"]
+    UNPLACE -- "no" --> PAST{"Past last step, or on a stop step?"}
+    PAST -- "yes" --> DONE
+    PAST -- "no" --> ELIG{"evaluateEligibility<br/>suppression, already replied,<br/>daily cap, profile for country"}
     ELIG -- "not eligible" --> SKIP["applySchedule<br/>record the reason, do not advance"]
-    ELIG -- "eligible" --> STATE{"same-state rule<br/>checkStateMatch<br/>PA owns the number, PA recipient"}
-    STATE -- "mismatch" --> PARK["park as awaiting_human<br/>hard block, no fallback"]
-    STATE -- "match" --> QUIET{"quiet hours in the<br/>recipient's own zone"}
-    QUIET -- "inside" --> DEFERR["defer to the window<br/>never dropped, always re-planned"]
+    ELIG -- "eligible" --> QUIET{"Quiet hours in the<br/>recipient's own zone?"}
+    QUIET -- "inside" --> DEFERR["defer to the window<br/>quiet-hours. Never dropped,<br/>always re-planned."]
     QUIET -- "outside, or the<br/>sequence sets the override" --> CAP
   end
 
+  subgraph gates["Runner gates, before any capacity is spent"]
+    CAP --> ACCOUNT{"Sending account usable?"}
+    ACCOUNT -- "no" --> PARKACC["park as awaiting_human<br/>sender-reason"]
+    ACCOUNT -- "yes" --> KEY{"API key for that account?"}
+    KEY -- "no" --> FAILKEY["recordStep as failed<br/>missing-telnyx-api-key.<br/>No claim held, so the retry ceiling<br/>is actually reachable."]
+    KEY -- "yes" --> TONUMBER{"A recipient number?"}
+    TONUMBER -- "no" --> SKIPNUM["recordStep as skipped<br/>no-number"]
+    TONUMBER -- "yes" --> POOLRES{"Pool sequence?<br/>reserve with consumeSender"}
+    POOLRES -- "nothing may send" --> POOLDEF["park sender-not-ready,<br/>or defer pool-rate-limited.<br/>No capacity token spent."]
+    POOLRES -- "reserved" --> CAP
+  end
+
   subgraph claim["The two claims, in this order"]
-    CAP["claimSendCapacity<br/>account ceiling, per-number bucket,<br/>campaign, brand"]
+    CAP["claimSendCapacity<br/>account ceiling, per-number bucket,<br/>campaign allowance.<br/>No brand bucket: brandId is never passed."]
     CAP --> CAPOK{"Capacity?"}
     CAPOK -- "no" --> DEFER["defer with lastSkipReason<br/>send-capacity-exhausted.<br/>No claim held, so the step retries."]
     CAPOK -- "yes" --> STEP["claimStep<br/>on this exact cursor"]
@@ -43,11 +75,12 @@ flowchart TD
 
   RECHECK["Re-read after the claim<br/>the stopping webhook runs in its own<br/>transaction and cannot interrupt this action,<br/>so this is the only safe place to notice"]
   RECHECK --> LIVE{"Still active, same cursor,<br/>has not replied?"}
-  LIVE -- "no" --> NOTSENT["record the outcome, send nothing"]
+  LIVE -- "no" --> NOTSENT["record the outcome, send nothing.<br/>stopped-during-claim, cursor-moved,<br/>or replied-before-send."]
   LIVE -- "yes" --> SEND["POST /v2/messages<br/>with the resolved profile"]
   SEND --> OUTCOME{"Result"}
   OUTCOME -- "delivered or accepted" --> RECORD["recordStep, applySchedule<br/>cursor advances, nextDueAt<br/>from the send time"]
-  OUTCOME -- "rate limited or transient" --> BACKOFF["scheduleRetry<br/>back off on the provider's code"]
+  OUTCOME -- "retryable provider failure" --> BACKOFF["scheduleRetry<br/>back off on the provider's code"]
+  OUTCOME -- "non-retryable provider failure" --> FAILED["recordStep as failed<br/>the enrollment is done"]
   OUTCOME -- "unknown whether it went out" --> AMBIG["recordStep as ambiguous.<br/>Never retried on a timer."]
 
   NOTE["The runner reads dueEnrollments and nothing<br/>else decides what is due, so a cron and a manual<br/>run cannot disagree about the queue."]:::note
@@ -57,9 +90,9 @@ flowchart TD
   classDef stop fill:#2a0f0f,stroke:#f87171,color:#f5f7ff
   classDef defer fill:#2a1f0f,stroke:#fbbf24,color:#f5f7ff
   classDef pure fill:#0f1f2a,stroke:#5ee7ff,color:#f5f7ff
-  class CTX,ELIG,STATE,QUIET pure
-  class PARK,NOTSENT,AMBIG stop
-  class DEFERR,DEFER,BACKOFF defer
+  class CTX,GUARD,CURSOR,READY,MACHINE,SENDERR,UNPLACE,PAST,ELIG,QUIET,ACCOUNT,KEY,TONUMBER,POOLRES,CAPOK,STEPOK,LIVE,OUTCOME pure
+  class PARK,PARKSEND,PARKACC,PARKZ,DONE,NOTSENT,FAILED,AMBIG,SKIPNUM stop
+  class DEFERR,SKIP,DEFER,BACKOFF,POOLPARK,POOLDEF,FAILKEY defer
 ```
 
 
@@ -82,14 +115,14 @@ The three blockers named below have been closed on `jilly-pool-domain`:
 2. **The claims table exists.** `sequenceSendClaims` has a unique index on
    `[enrollmentId, cursor]`, and the internal `claimStep` mutation is the only
    door into it.
-3. **`convex.json` and `convex/crons.ts` exist.** A one-minute cron drains
+3. **`convex.json` and `convex/crons.ts` exist.** A 15-second cron drains
    `runDueEnrollments` with a batch of 25; `docs/pools.md` and
    `goal.md` track the state.
 
 ## What remains open: deployment
 
 The branch has been merged to `main` (PR #2, `9b70ac3`). What is not yet done is
-the live-deployment step: `pnpm convex:deploy`, watching the one-minute cron fire,
+the live-deployment step: `pnpm convex:deploy`, watching the 15-second cron fire,
 and `pnpm openapi` against the prod deployment to regenerate the spec. The test
 harness in `convex/test/` proves the Convex layer; that is the last gap.
 
@@ -336,7 +369,7 @@ Each step is independently shippable, and each is small.
 
 1. ~~**Add `ambiguous` and `awaiting-human`**~~ **Done.**
 2. ~~**Add `sequenceSendClaims`**~~ **Done**, with the internal `claimStep` mutation.
-3. ~~**Add `convex.json` and `crons.ts`**~~ **Done.** The one-minute cron drains
+3. ~~**Add `convex.json` and `crons.ts`**~~ **Done.** The 15-second cron drains
    `runDueEnrollments` with a batch of 25.
  4. ~~**Stop the sequence on reply.**~~ **Done.** The verified webhook stores the
     message and stops the enrollment in one transaction, then fans out a Bark

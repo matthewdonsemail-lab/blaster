@@ -36,7 +36,7 @@ flowchart TB
     HTTP["convex/http/<br/>operator routes mirrored, so a site<br/>with no Hono still answers"]
     SEQACT["convex/sequence/actions.ts<br/>runDueEnrollments, runEnrollmentStep,<br/>enrollRecipients"]
     CRON["convex/crons.ts<br/>sequence runner, 15s, limit 25"]
-    RL["convex/rateLimit.ts<br/>account, per-number, campaign, brand"]
+    RL["convex/rateLimit.ts<br/>account, per-number, campaign buckets.<br/>A brand bucket is defined but<br/>the runner never claims it."]
     PHONES["convex/phoneNumbers/<br/>ledger, compliance snapshot"]
     AGENT["@convex-dev/agent<br/>conversation threads and history"]
     LIMITER["@convex-dev/rate-limiter<br/>mounted component"]

@@ -97,7 +97,7 @@ flowchart TB
   subgraph inbound["An inbound reply arrives"]
     HOOK["POST /api/webhooks/telnyx"]
     THREAD["conversation thread,<br/>@convex-dev/agent"]
-    CLASSIFY["classifySendResult,<br/>conversation classification"]
+    CLASSIFY["classifyConversation<br/>conversation/classification/classify.ts.<br/>Inbound classification only.<br/>Outbound sends are classified by<br/>classifySendResult in telnyx/messaging -<br/>a different function, not this one."]
     STOP{"Is it an opt-out?"}
   end
 

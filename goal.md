@@ -1,8 +1,8 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-04T07:34:02Z
-commit: fix: stop the sequence read path from reporting steps it does not have
+updated: 2026-10-04T08:31:27Z
+commit: test: cover the read failures the send-path tables only described
 -->
 
 The running scope for the documentation objective: the diagrams, README, and prose
@@ -29,6 +29,7 @@ so a diagram cannot quietly contradict the code.
 - README.md
 - docs/architecture.md
 - docs/call-history.md
+- docs/error-codes.md
 - docs/diagrams/README.md
 - docs/diagrams/data-model.mmd
 - docs/diagrams/deployment-and-gates.mmd
@@ -44,6 +45,7 @@ so a diagram cannot quietly contradict the code.
 - docs/sequencer.md
 - goal.md
 - package.json
+- packages/blaster-cli/test/sequence-read-failures.test.ts
 - plugins/blaster/.claude-plugin/plugin.json
 - pnpm-lock.yaml
 - scripts/check-diagrams.mjs
@@ -61,6 +63,11 @@ so a diagram cannot quietly contradict the code.
 - [x] Self-test for the checker (unparseable diagram rejected, contradicted fact rejected, fenced-block extraction), wired into `pnpm check` as gates 14 and 15
 - [x] `mermaid` and `jsdom` added as devDependencies via pnpm; lockfile updated
 - [x] Full `pnpm check` green with the new gates in the chain
+- [x] Audit fixes A-F against `machine.ts`, `actions.ts` and `compliance.ts`: runner-tick redrawn in the real guard order with the account, API-key, `no-number` and `consumeSender` gates, no brand bucket in the capacity claim, generic same-state wording, guidance CLASSIFY is `classifyConversation`, `crons.ts` comment says 15 seconds
+- [x] Gate is real: `%%` annotation reader fixed, `run()` owns its violations, the self-test drives `run()` for a wrong fact, a right fact, an unknown fact name and a contradicted drawing, ordering facts anchor on call sites with comments stripped
+- [x] `%% edge-chain:` so the gate checks the arrows a diagram draws, not only the prose in its annotation
+- [x] `docs/error-codes.md`: every send-path and read-path failure with where it is raised, whether it retries, what the operator sees, and which test covers it
+- [x] `sequence-read-failures.test.ts`: `showDraft`/`runDraft` on 404, 502 and 503, and `newDraft` end to end for explicit `--steps`
 
 ## Backlog carried forward from the pool objective
 

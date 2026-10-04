@@ -65,7 +65,7 @@ sequenceDiagram
 
   Route->>Twelve: walkProspectRows(DSL)
   Twelve-->>Route: every matching row
-  Note over Route: more than MAX_BATCH_PROSPECTS<br/>is refused at the gate, 400
+  Note over Route: more than MAX_BATCH_PROSPECTS (500)<br/>is refused at the gate, 400
 
   Route->>Route: splitEligibility(rows)
   Note over Route: no E.164 phone, or a terminal<br/>outbound stage, is a skip with a reason

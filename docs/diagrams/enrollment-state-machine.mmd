@@ -15,6 +15,7 @@
 %% top-level: it only leaves `awaiting_human`, `opted_out`, `paused` and
 %% `failed`, and an earlier version of this file claimed otherwise.
 %% fact: machine-top-level-events 3
+%% fact: machine-evaluating-order senderNotReady>recipientUnplaceable>pastLastStep>reachedStopStep>notEligible>withinQuietHours
 stateDiagram-v2
   direction TB
 

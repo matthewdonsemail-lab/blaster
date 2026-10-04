@@ -21,28 +21,39 @@
 //      change the code and the diagram disagrees, you either fix the diagram or
 //      you delete the annotation on purpose and say so in the commit.
 //
+//   3. Checks the *drawing* of any diagram that carries an `%% edge-chain:`
+//      annotation, which names the node ids of a load-bearing path:
+//
+//        %% edge-chain: A>B>C
+//
+//      A fact pins what the diagram says about the code. It cannot see the
+//      arrows, so step 2 alone lets someone reorder a flowchart and stay green.
+//      This step reads the drawn edges out of the same source and requires every
+//      consecutive pair to exist. It is a structural check, not a meaning one:
+//      it proves the diagram contains that path, not that the path is right.
+//
 // This gate is deliberately narrow. It checks that the diagrams are *accurate*,
 // not that they are *good*, and it never edits anything: a checker that
 // rewrites documentation hides the drift instead of surfacing it.
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..");
-const DIAGRAMS = join(root, "docs/diagrams");
 
 const violations = [];
 const notes = [];
 const report = (m) => violations.push(m);
 
-function read(path) {
+function read(path, reportFail = report) {
   try {
     return readFileSync(path, "utf8");
   } catch {
-    report(`${relative(root, path)}: cannot be read.`);
+    reportFail(`${relative(root, path)}: cannot be read.`);
     return "";
   }
 }
@@ -78,12 +89,49 @@ function countMatches(source, pattern) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Line and block comments removed, newlines preserved so positions still mean
+ * "line N of the file".
+ *
+ * Without this, a comment that happens to mention `sendMessage` before the real
+ * call site would move `runner-gate-order` and the fact would either fail on a
+ * rename or, worse, agree with a diagram that is wrong. Strings are kept, because
+ * two of the ordering markers are string literals (`"no-number"`).
+ */
+export function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "))
+    .replace(/(^|[^:"'`\\])\/\/[^\n]*/g, (m) => m.replace(/[^\n]/g, " "));
+}
+
+/**
+ * The order in which `markers` first appear in `source`, joined with `>`.
+ *
+ * This is what turns a diagram's arrows into something the gate can check. A
+ * count cannot tell you that capacity is claimed before the step; the position
+ * of two tokens in a file can. Comments are stripped first, so a comment
+ * mentioning a marker cannot move it. Returns null when a marker is missing, so
+ * a rename surfaces as a failing fact rather than as a silently shorter string.
+ */
+export function orderOf(rawSource, markers) {
+  const source = stripComments(rawSource);
+  const seen = [];
+  let at = -1;
+  for (const marker of markers) {
+    const next = source.indexOf(marker, at + 1);
+    if (next < 0) return null;
+    seen.push(marker);
+    at = next;
+  }
+  return seen.join(">");
+}
+
+/**
  * Every fact the diagrams are allowed to assert, derived from source.
  *
  * Adding a fact here is the only supported way to make a diagram checkable.
  * Each returns a string because that is what the annotation carries.
  */
-export function facts(rootDir = root) {
+export function facts(rootDir = root, report = () => {}) {
   const src = (p) => {
     try {
       return readFileSync(join(rootDir, p), "utf8");
@@ -92,9 +140,16 @@ export function facts(rootDir = root) {
     }
   };
 
-  const schemaModules = readdirSync(join(rootDir, "convex/schema"))
-    .filter((f) => f.endsWith(".ts"))
-    .map((f) => join(rootDir, "convex/schema", f));
+  const schemaModules = (() => {
+    try {
+      return readdirSync(join(rootDir, "convex/schema"))
+        .filter((f) => f.endsWith(".ts"))
+        .map((f) => join(rootDir, "convex/schema", f));
+    } catch {
+      report("convex/schema: cannot be read.");
+      return [];
+    }
+  })();
 
   const tables = schemaModules.reduce(
     (n, f) => n + countMatches(src(relative(rootDir, f)), /^\s{2}\w+:\s*defineTable\(/gm),
@@ -107,6 +162,10 @@ export function facts(rootDir = root) {
   const crons = src("convex/crons.ts");
   const cronSeconds = /seconds:\s*(\d+)/.exec(crons)?.[1] ?? "";
   const cronLimit = /limit:\s*(\d+)/.exec(crons)?.[1] ?? "";
+  // The comment above the cron states the interval too. Deriving it separately
+  // is what stops the two drifting: change `{ seconds }` without the comment and
+  // this fact disagrees with `cron-interval-seconds`, and the gate fails.
+  const cronCommentSeconds = /(\d+)[- ]second/.exec(crons)?.[1] ?? "";
 
   const machine = src("packages/core/src/pipeline/sequence/machine.ts");
   // The top-level `on` block is the one immediately preceding `states: {`.
@@ -115,9 +174,44 @@ export function facts(rootDir = root) {
   const topLevelOn = /^\s{4}on:\s*\{([\s\S]*?)^\s{4}states:\s*\{/m.exec(machine)?.[1] ?? "";
   const topLevelEvents = countMatches(topLevelOn, /^\s{6}([A-Z_]+):/gm);
 
+  // The `evaluating` state's `always` array, in the order the machine tests its
+  // guards. A diagram that draws these nodes in a different order is wrong, and
+  // a count cannot see it, so the order itself is the fact.
+  const evaluatingAlways =
+    /evaluating:\s*\{\s*entry:\s*"evaluateTick",\s*always:\s*\[([\s\S]*?)\n\s*\],/.exec(machine)?.[1] ?? "";
+  const evaluatingOrder = [
+    ...evaluatingAlways.matchAll(/guard:\s*"(\w+)"/g),
+  ].map((m) => m[1]);
+
   const registry = src("packages/core/src/blaster/capabilities/helpers/registry.ts");
   const mcp = src("packages/blaster-mcp/src/mcp/index.ts");
   const guidance = src("packages/core/src/guidance/prompts/types.ts");
+
+  // Ordering facts. These are the claims a reviewer is most likely to accept on
+  // trust and never check: that a refusal cannot strand a claim, that sender
+  // readiness is tested before eligibility, and that no send happens without a
+  // capacity claim first. Each is the position of real tokens in real source.
+  const runner = src("convex/sequence/actions.ts");
+  const capacityCall = /claimSendCapacity,\s*\{([\s\S]*?)\}\);/.exec(runner)?.[1] ?? "";
+  const capacityArgs = [...capacityCall.matchAll(/^\s{6}(\w+)[,:]/gm)].map((m) => m[1]);
+
+  const conversationMutations = src("convex/conversations/mutations.ts");
+  // One exported mutation, from its declaration to the next one. Matching on
+  // the next `export const` rather than on a closing brace keeps this from
+  // stopping at an inner object literal.
+  const inbound =
+    /export const recordInboundMessage[\s\S]*?(?=\nexport const|\n$)/.exec(conversationMutations)?.[0] ?? "";
+
+  const profile = src("packages/core/src/telnyx/messaging/helpers/profile.ts");
+  // The precedence order a diagram claims to show, read off the reason union.
+  // The union is declared in the order the resolver can return them, which is
+  // exactly the order the diagram draws, so the two cannot drift silently.
+  const reasonUnion = /SelectionReason\s*=\s*([\s\S]*?);/.exec(profile)?.[1] ?? "";
+  const profileReasons = [...reasonUnion.matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+
+  const breakdown = src("packages/core/src/pipeline/breakdown/helpers/build.ts");
+  const apiIndex = src("apps/api/src/index.ts");
+  const graphqlSession = src("packages/core/src/twenty/graphql/helpers/session.ts");
 
   let checkSteps = "";
   try {
@@ -136,9 +230,37 @@ export function facts(rootDir = root) {
     "schema-modules": String(schemaModules.length),
     "mounted-components": String(mounted),
     "cron-interval-seconds": cronSeconds,
+    "cron-comment-seconds": cronCommentSeconds,
     "cron-limit": cronLimit,
     "machine-top-level-events": String(topLevelEvents),
+    "machine-evaluating-order": evaluatingOrder.join(">"),
     "registry-entries": String(countMatches(registry, /id:\s*"/g)),
+    // Markers are anchored on call sites (`ctx.runQuery(internal.x.y`, `foo({`)
+    // rather than bare names, so an import or a type can never stand in for the
+    // call being ordered.
+    "runner-gate-order": String(
+      orderOf(runner, [
+        "dryRunEnrollment({",
+        "telnyxAccounts.queries.usability,",
+        "resolveAccountKey(convexEnv",
+        'skipReason: "no-number"',
+        "mutations.consumeSender",
+        "mutations.claimSendCapacity",
+        "mutations.claimStep",
+        "sendMessage({",
+      ]),
+    ),
+    "runner-capacity-args": capacityArgs.join(","),
+    "inbound-stop-order": String(
+      orderOf(inbound, ["args.providerEventId", 'insert("messages"', "stopEnrollmentsForPeer"]),
+    ),
+    "profile-reasons": profileReasons.join(","),
+    "notification-rules": String(countMatches(breakdown, /id:\s*"/g)),
+    "max-batch-prospects": /MAX_BATCH_PROSPECTS\s*=\s*(\d+)/.exec(apiIndex)?.[1] ?? "",
+    "sequence-tables": String(
+      countMatches(src("convex/schema/sequences.ts"), /^\s{2}\w+:\s*defineTable\(/gm),
+    ),
+    "graphql-expiry-code": /extensions\?\.code\s*===\s*"([A-Z_]+)"/.exec(graphqlSession)?.[1] ?? "",
     "mcp-tools": String(countMatches(mcp, /name:\s*"blaster_/g)),
     "guidance-seeds": String(
       new Set([...guidance.matchAll(/"([a-z]+\.[a-z-]+\.v\d+)"/g)].map((m) => m[1])).size,
@@ -147,13 +269,74 @@ export function facts(rootDir = root) {
   };
 }
 
-/** `%% fact: <name> <value>` annotations in a diagram or Markdown file. */
+/**
+ * `%% fact: <name> <value>` annotations in a diagram or Markdown file.
+ *
+ * The comment marker is matched as a whole token - `%%` for Mermaid, `//` for a
+ * TS or JS file. An earlier version of this used `(?:%|//)`, which matched a
+ * single `%` and therefore never matched a Mermaid annotation: every fact in
+ * every diagram was silently unchecked, and the gate reported OK. Written as
+ * `(?:%{2}|//)` so the marker cannot be half-matched again, and asserted below in
+ * `selfTest()` against a real `%%` annotation.
+ */
 export function assertedFacts(source) {
   const out = [];
-  for (const m of source.matchAll(/^\s*(?:%|\/\/)\s*fact:\s*(\S+)\s+(\S+)\s*$/gm)) {
+  for (const m of source.matchAll(/^\s*(?:%{2}|\/\/)\s*fact:\s*(\S+)\s+(\S+)\s*$/gm)) {
     out.push({ name: m[1], value: m[2] });
   }
   return out;
+}
+
+/**
+ * `%% edge-chain: A>B>C` - the load-bearing path a diagram claims to draw.
+ *
+ * The `fact:` annotations above are compared against source code, so they pin
+ * what the diagram *says*, not the arrows it draws. Someone can rearrange the
+ * flowchart, leave the annotation alone, and stay green. This annotation is the
+ * missing half: the gate reads the drawn edges out of the same source and
+ * requires every consecutive pair to exist, so a reordered drawing fails.
+ *
+ * Node ids are Mermaid ids, not labels. Only solid `A --> B` edges count;
+ * dotted `-.->` notes are excluded so an annotation cannot lean on decoration.
+ */
+export function assertedEdgeChains(source) {
+  const out = [];
+  for (const m of source.matchAll(/^\s*%{2}\s*edge-chain:\s*(\S+)\s*$/gm)) {
+    // `/` separates independent runs, so a diagram with more than one entry
+    // point can state each of them in one annotation.
+    for (const segment of m[1].split("/")) out.push(segment.split(">"));
+  }
+  return out;
+}
+
+/** Every drawn solid edge as a `from>to` key. Labels and shapes are ignored. */
+export function drawnEdges(source) {
+  const body = source.replace(/^\s*%{2}.*$/gm, "").replace(/\r/g, "");
+  const edges = new Set();
+  const id = (text) => /^\s*([A-Za-z0-9_]+)/.exec(text)?.[1];
+  for (const line of body.split("\n")) {
+    // Split on the arrow rather than matching it with one pattern: a label may
+    // sit on either side of the arrow and a node label may contain `<br/>`,
+    // which any single arrow regex ends up tripping over. A dotted `-.->` note
+    // contains no `-->` and is therefore skipped.
+    const parts = line.split("-->");
+    if (parts.length < 2) continue;
+    const from = id(parts[0]);
+    const to = id(parts[parts.length - 1]);
+    if (from && to) edges.add(`${from}>${to}`);
+  }
+  return edges;
+}
+
+/** Consecutive pairs in a chain that no drawn edge supports. */
+export function brokenEdgeLinks(source, chain) {
+  const edges = drawnEdges(source);
+  const broken = [];
+  for (let i = 0; i < chain.length - 1; i++) {
+    const key = `${chain[i]}>${chain[i + 1]}`;
+    if (!edges.has(key)) broken.push(key);
+  }
+  return broken;
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +347,7 @@ export function assertedFacts(source) {
  * Mermaid needs a DOM. jsdom is a devDependency for exactly this one call, and
  * nothing else in the repo imports it.
  */
-async function parseAll(sources) {
+async function parseAll(sources, reportFail = report) {
   const dom = new JSDOM("<!doctype html><html><body></body></html>", {
     pretendToBeVisual: true,
   });
@@ -186,7 +369,7 @@ async function parseAll(sources) {
       await mermaid.parse(source);
     } catch (error) {
       const first = String(error?.message ?? error).split("\n")[0];
-      report(`${label}: does not parse. ${first}`);
+      reportFail(`${label}: does not parse. ${first}`);
     }
   }
 }
@@ -204,19 +387,19 @@ export function mermaidBlocks(markdown) {
  * A stale index is the failure mode this gate exists to prevent: the previous
  * version of that index claimed ten diagrams while twelve were on disk.
  */
-function checkIndex(mmdFiles, indexSource) {
+function checkIndex(mmdFiles, indexSource, reportFail = report) {
   const listed = new Set(
     [...indexSource.matchAll(/\]\(([a-z0-9-]+\.mmd)\)/g)].map((m) => m[1]),
   );
   for (const file of mmdFiles) {
     const name = file.split(/[\\/]/).pop();
     if (!listed.has(name)) {
-      report(`docs/diagrams/README.md: does not list ${name}.`);
+      reportFail(`docs/diagrams/README.md: does not list ${name}.`);
     }
   }
   for (const name of listed) {
     if (!mmdFiles.some((f) => f.endsWith(name))) {
-      report(`docs/diagrams/README.md: lists ${name}, which does not exist.`);
+      reportFail(`docs/diagrams/README.md: lists ${name}, which does not exist.`);
     }
   }
 }
@@ -241,43 +424,59 @@ export function diagramBody(source) {
  * a convention, this makes a hand-written block a hard failure: if you want a
  * diagram in prose, add it to a `.mmd` and paste that file's body.
  */
-function checkEmbeddedBlocksAreCopies(sources, bodies) {
+function checkEmbeddedBlocksAreCopies(sources, bodies, reportFail = report) {
   for (const { label, source } of sources) {
     if (!label.includes("mermaid block")) continue;
     const body = diagramBody(source);
     if (!bodies.has(body)) {
-      report(
+      reportFail(
         `${label}: is not a copy of any docs/diagrams/*.mmd. Embedded diagrams must be pasted from the .mmd file so there is one source of truth; add the diagram as a .mmd first.`,
       );
     }
   }
 }
 
-export async function run() {
-  const derived = facts();
-  const mmdFiles = readAll(DIAGRAMS, ".mmd").sort();
+/**
+ * Run the whole gate.
+ *
+ * `rootDir` exists for the self-test: it points the gate at a throwaway tree so
+ * the self-test can drive this exact function rather than a re-implementation of
+ * one of its comparisons. Nothing else should pass it.
+ *
+ * Violations go into a list this call owns rather than the module-level one the
+ * self-test writes to. Sharing them would mean a throwaway tree's complaints
+ * about its own missing source files showed up as failures of the real gate.
+ */
+export async function run(options = {}) {
+  const rootDir = options.rootDir ?? root;
+  const diagramsDir = join(rootDir, "docs/diagrams");
+  const found = [];
+  const reportFail = (m) => found.push(m);
+
+  const derived = facts(rootDir, reportFail);
+  const mmdFiles = readAll(diagramsDir, ".mmd").sort();
 
   if (mmdFiles.length === 0) {
-    report("docs/diagrams: no .mmd files found.");
-    return { violations, notes, derived };
+    reportFail("docs/diagrams: no .mmd files found.");
+    return { violations: found, notes, derived };
   }
 
   const sources = [];
   for (const file of mmdFiles) {
-    const label = relative(root, file);
-    sources.push({ label, source: read(file) });
+    const label = relative(rootDir, file);
+    sources.push({ label, source: read(file, reportFail) });
   }
 
   // Authored Markdown: the README and docs/, excluding vendored trees.
   const markdown = [];
-  for (const f of [join(root, "README.md"), ...readAll(join(root, "docs"), ".md")]) {
+  for (const f of [join(rootDir, "README.md"), ...readAll(join(rootDir, "docs"), ".md")]) {
     if (/vendor|node_modules|_generated/.test(f)) continue;
     markdown.push(f);
   }
   for (const file of markdown) {
-    const source = read(file);
+    const source = read(file, reportFail);
     mermaidBlocks(source).forEach((block, i) => {
-      sources.push({ label: `${relative(root, file)} (mermaid block ${i + 1})`, source: block });
+      sources.push({ label: `${relative(rootDir, file)} (mermaid block ${i + 1})`, source: block });
     });
   }
 
@@ -285,35 +484,69 @@ export async function run() {
   for (const { label, source } of sources) {
     for (const { name, value } of assertedFacts(source)) {
       if (!(name in derived)) {
-        report(
+        reportFail(
           `${label}: asserts an unknown fact "${name}". Add it to facts() in check-diagrams.mjs, or delete the annotation.`,
         );
         continue;
       }
       if (derived[name] !== value) {
-        report(
+        reportFail(
           `${label}: says ${name} is ${value}, but the code says ${derived[name]}. Fix the diagram or delete the annotation on purpose.`,
         );
       }
     }
   }
 
-  checkIndex(mmdFiles, read(join(DIAGRAMS, "README.md")));
+  // Drawn arrows, checked against what the diagram claims to draw.
+  for (const { label, source } of sources) {
+    for (const chain of assertedEdgeChains(source)) {
+      for (const link of brokenEdgeLinks(source, chain)) {
+        reportFail(
+          `${label}: edge-chain claims ${link}, but no drawn edge goes that way. Reorder the flowchart, or fix the annotation.`,
+        );
+      }
+    }
+  }
+
+  checkIndex(mmdFiles, read(join(diagramsDir, "README.md"), reportFail), reportFail);
 
   const bodies = new Set(sources.filter((s) => s.label.endsWith(".mmd")).map((s) => diagramBody(s.source)));
-  checkEmbeddedBlocksAreCopies(sources, bodies);
+  checkEmbeddedBlocksAreCopies(sources, bodies, reportFail);
 
-  await parseAll(sources);
+  await parseAll(sources, reportFail);
 
   notes.push(`${mmdFiles.length} diagrams parsed.`);
   notes.push(`${sources.length} mermaid sources checked, including embedded blocks.`);
-  return { violations, notes, derived };
+  return { violations: found, notes, derived };
 }
 
 // --- self-test -------------------------------------------------------------
 // A gate that cannot fail is indistinguishable from no gate, so this proves it
 // fails on a known-bad input: a diagram that does not parse, and a diagram that
 // asserts a fact the code contradicts.
+//
+// The fact half of that drives `run()` itself against a throwaway tree. An
+// earlier version re-implemented the comparison `derived[name] !== value` here
+// and asserted on it, which proved nothing: if `run()` stopped comparing facts
+// altogether, this self-test would still have passed.
+
+/** A throwaway repo-shaped tree containing one diagram, and its path. */
+function tempTree(name, diagram) {
+  const base = mkdtempSync(join(tmpdir(), "check-diagrams-"));
+  const dir = join(base, "docs/diagrams");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, name), diagram);
+  // Both READMEs are read by the gate. An empty root README and an index that
+  // lists only this file keep the self-test's complaints about the fact under
+  // test rather than about an absent file.
+  writeFileSync(join(base, "README.md"), "");
+  writeFileSync(join(dir, "README.md"), `# Diagrams\n\n[${name}](${name})\n`);
+  return base;
+}
+
+/** Only the violations about one fact, so an unrelated failure cannot pass for one. */
+const complaintsAbout = (violations, fact) =>
+  violations.filter((v) => v.includes(fact));
 
 export async function selfTest() {
   const good = 'flowchart TD\n  A["a"] --> B["b"]';
@@ -353,17 +586,105 @@ export async function selfTest() {
   }
   if (!threwGood) notes.push("self-test: valid diagram is accepted.");
 
-  // The fact check must reject a value the code contradicts.
-  const name = "schema-tables";
-  const wrong = { name, value: String(Number(derived[name]) + 1) };
-  const detected = derived[wrong.name] !== wrong.value;
-  if (!detected) report("self-test: a wrong asserted fact was not detected.");
-  else notes.push("self-test: a contradicted fact is rejected.");
+  // The fact check must reject a value the code contradicts, through run().
+  // The expected value is whatever this throwaway tree derives, not whatever the
+  // real repo derives: the tree has no source, so its table count is its own.
+  const probe = await run({ rootDir: tempTree("probe.mmd", "flowchart TD\n  A[\"a\"] --> B[\"b\"]\n") });
+  const expected = probe.derived["schema-tables"];
+  const wrongValue = String(Number(expected) + 1);
+  const wrongTree = tempTree(
+    "wrong-fact.mmd",
+    `%% fact: schema-tables ${wrongValue}\nflowchart TD\n  A["a"] --> B["b"]\n`,
+  );
+  const wrongRun = await run({ rootDir: wrongTree });
+  const wrongComplaints = complaintsAbout(wrongRun.violations, "schema-tables");
+  if (wrongComplaints.length === 0) {
+    report("self-test: run() accepted a diagram asserting a fact the code contradicts.");
+  } else {
+    notes.push("self-test: run() rejects a contradicted fact.");
+  }
+
+  // And it must accept the value the code actually derives, or "reject
+  // everything" would pass the check above.
+  const rightTree = tempTree(
+    "right-fact.mmd",
+    `%% fact: schema-tables ${expected}\nflowchart TD\n  A["a"] --> B["b"]\n`,
+  );
+  const rightRun = await run({ rootDir: rightTree });
+  const rightComplaints = complaintsAbout(rightRun.violations, "schema-tables");
+  if (rightComplaints.length > 0) {
+    report("self-test: run() rejected a fact the code agrees with.");
+  } else {
+    notes.push("self-test: run() accepts a fact the code agrees with.");
+  }
+
+  // The arrow half. A fact annotation pins what a diagram says about the code;
+  // an edge-chain annotation pins the drawing itself, so reordering the
+  // flowchart while leaving the prose alone has to fail.
+  const reorderedTree = tempTree(
+    "reordered.mmd",
+    '%% edge-chain: A>B>C\nflowchart TD\n  A["a"] --> C["c"]\n  C --> B["b"]\n',
+  );
+  const reorderedRun = await run({ rootDir: reorderedTree });
+  if (complaintsAbout(reorderedRun.violations, "edge-chain").length === 0) {
+    report("self-test: run() accepted an edge-chain the drawing does not follow.");
+  } else {
+    notes.push("self-test: run() rejects an edge-chain the drawing contradicts.");
+  }
+
+  const drawnTree = tempTree(
+    "drawn.mmd",
+    '%% edge-chain: A>B>C\nflowchart TD\n  A["a"] --> B["b"]\n  B -- yes --> C["c"]\n',
+  );
+  const drawnRun = await run({ rootDir: drawnTree });
+  if (complaintsAbout(drawnRun.violations, "edge-chain").length > 0) {
+    report("self-test: run() rejected an edge-chain the drawing does follow.");
+  } else {
+    notes.push("self-test: run() accepts an edge-chain the drawing follows.");
+  }
+
+  // The gate must also reject a fact it does not know, so a typo in an
+  // annotation is not silently inert.
+  const unknownTree = tempTree(
+    "unknown-fact.mmd",
+    `%% fact: no-such-fact 1\nflowchart TD\n  A["a"] --> B["b"]\n`,
+  );
+  const unknownRun = await run({ rootDir: unknownTree });
+  if (complaintsAbout(unknownRun.violations, "no-such-fact").length === 0) {
+    report("self-test: run() accepted an annotation naming a fact it does not know.");
+  } else {
+    notes.push("self-test: run() rejects an unknown fact name.");
+  }
 
   if (mermaidBlocks("text\n```mermaid\nflowchart TD\n  A-->B\n```\n").length !== 1) {
     report("self-test: fenced mermaid block extraction is wrong.");
   } else {
     notes.push("self-test: fenced block extraction works.");
+  }
+
+  // The annotation reader must see a Mermaid `%%` annotation and a `//` one. A
+  // marker regex that matches only half of `%%` leaves every diagram's facts
+  // unchecked while the gate still reports OK, which is the worst failure this
+  // gate can have and the cheapest to test for.
+  const parsedFacts = assertedFacts("%% fact: alpha 1\n// fact: beta 2\n  %% fact: gamma 3\n");
+  if (parsedFacts.length !== 3 || parsedFacts[0].name !== "alpha" || parsedFacts[2].name !== "gamma") {
+    report(
+      `self-test: fact annotations were not read back correctly (${JSON.stringify(parsedFacts)}). A diagram's \`%% fact:\` lines are silently ignored when this fails, so the gate passes on unchecked diagrams.`,
+    );
+  } else {
+    notes.push("self-test: `%%` and `//` fact annotations are both read.");
+  }
+
+  // And the real diagrams must actually carry facts. If none of them do, the
+  // reader above can be correct and the gate still checks nothing.
+  const realDiagrams = readAll(join(root, "docs/diagrams"), ".mmd");
+  const annotated = realDiagrams.filter((f) => assertedFacts(read(f)).length > 0);
+  if (realDiagrams.length > 0 && annotated.length === 0) {
+    report(
+      "self-test: no diagram in docs/diagrams carries a fact annotation, so the gate is checking nothing. Annotate at least one, or delete the fact machinery.",
+    );
+  } else {
+    notes.push(`self-test: ${annotated.length} of ${realDiagrams.length} diagrams carry fact annotations.`);
   }
 
   return { violations, notes, derived };

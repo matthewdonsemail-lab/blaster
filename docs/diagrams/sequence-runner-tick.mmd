@@ -1,13 +1,31 @@
 %% What one tick of the sequence runner actually does, from
-%% `convex/crons.ts` through `convex/sequence/actions.ts` (2026-10-04).
+%% `convex/crons.ts` through `convex/sequence/actions.ts` and the state machine in
+%% `packages/core/src/pipeline/sequence/machine.ts` (2026-10-04).
 %% ---
-%% The ordering in the middle is the whole point and it is easy to get wrong:
-%% capacity is claimed BEFORE the step is claimed, because a step claim is
-%% permanent (sequenceSendClaims rows are never deleted) and a capacity refusal
-%% would then strand the step as already-claimed forever. Reversing the two
-%% turns a retryable deferral into a dead enrollment.
+%% The order is the whole point and it is easy to get wrong, in two places:
+%% ---
+%%   1. Inside the machine, sender readiness is tested BEFORE eligibility. A
+%%      number that is not compliant parks the enrollment outright
+%%      (`sender-not-ready:<reason>`); it is never rescheduled as "ineligible",
+%%      so a stuck sender surfaces as a human problem rather than as a retry loop.
+%% ---
+%%   2. Capacity is claimed BEFORE the step is claimed, because a step claim is
+%%      permanent (sequenceSendClaims rows are never deleted) and a capacity refusal
+%%      would then strand the step as already-claimed forever. Reversing the two
+%%      turns a retryable deferral into a dead enrollment.
+%% ---
+%% Note on capacity: the runner passes only `fromNumber` and `campaignId`, so
+%% `claimSendCapacity` checks the account ceiling, the per-number bucket and the
+%% campaign allowance. It does NOT check `telnyxSendBrand` - `rateLimit.ts` only
+%% checks that bucket when `brandId` is passed, and nothing in the runner passes
+%% it. See docs/error-codes.md.
 %% fact: cron-interval-seconds 15
 %% fact: cron-limit 25
+%% fact: cron-comment-seconds 15
+%% fact: machine-evaluating-order senderNotReady>recipientUnplaceable>pastLastStep>reachedStopStep>notEligible>withinQuietHours
+%% fact: runner-gate-order dryRunEnrollment({>telnyxAccounts.queries.usability,>resolveAccountKey(convexEnv>skipReason: "no-number">mutations.consumeSender>mutations.claimSendCapacity>mutations.claimStep>sendMessage({
+%% fact: runner-capacity-args fromNumber,campaignId
+%% edge-chain: CRON>ACTION>IDS>ONE / CTX>GUARD>CURSOR>NUMBER>READY>MACHINE>SENDERR>UNPLACE>PAST>ELIG>QUIET>CAP>ACCOUNT>KEY>TONUMBER>POOLRES>CAP>CAPOK>STEP>STEPOK>RECHECK>LIVE>SEND>OUTCOME>RECORD
 flowchart TD
   CRON["cron: sequence runner<br/>every 15s, limit 25"] --> ACTION["runDueEnrollments<br/>internal action, sequential and bounded"]
 
@@ -16,17 +34,49 @@ flowchart TD
 
   subgraph tick["Inside one step - the order is load-bearing"]
     CTX["loadRunContext<br/>one consistent snapshot:<br/>enrollment, steps, sender, recipient"]
-    CTX --> ELIG{"evaluateEligibility<br/>suppression, already replied,<br/>daily cap, profile for country"}
+    CTX --> GUARD{"Enrollment active,<br/>sequence active?"}
+    GUARD -- "no" --> SENTINEL["sentinel: enrollment-<status><br/>or sequence-<status>, send nothing"]
+    GUARD -- "yes" --> CURSOR{"Cursor past the last step,<br/>or on a stop step?"}
+    CURSOR -- "yes" --> DONE["completeEnrollment<br/>the sequence is done, never send it"]
+    CURSOR -- "no" --> NUMBER["resolve the sending number<br/>pinned, or the pool's own order,<br/>or the sequence's fixed number"]
+  end
+
+  subgraph sender["Sender readiness, resolved before any decision"]
+    NUMBER --> READY{"checkDocReadiness<br/>and checkStateMatch"}
+    READY -- "not ready, or states differ" --> PARKSEND["park as awaiting_human<br/>sender-not-ready:reason, or state-mismatch.<br/>Hard block, no fallback."]
+    READY -- "ready" --> MACHINE
+    NUMBER -- "pool has nothing that may send" --> POOLPARK["park or defer:<br/>pool-no-state-matching-sender,<br/>pool-no-compliant-sender, pool-rate-limited,<br/>pool-empty"]
+  end
+
+  subgraph machine["The machine decides the tick, in machine.ts `evaluating.always`"]
+    MACHINE["dryRunEnrollment, then guards in this order"]
+    MACHINE --> SENDERR{"senderNotReady"}
+    SENDERR -- "yes" --> PARK["park as awaiting_human<br/>sender-not-ready:reason"]
+    SENDERR -- "no" --> UNPLACE{"Recipient unplaceable?"}
+    UNPLACE -- "yes" --> PARKZ["park as awaiting_human<br/>unplaceable-recipient"]
+    UNPLACE -- "no" --> PAST{"Past last step, or on a stop step?"}
+    PAST -- "yes" --> DONE
+    PAST -- "no" --> ELIG{"evaluateEligibility<br/>suppression, already replied,<br/>daily cap, profile for country"}
     ELIG -- "not eligible" --> SKIP["applySchedule<br/>record the reason, do not advance"]
-    ELIG -- "eligible" --> STATE{"same-state rule<br/>checkStateMatch<br/>PA owns the number, PA recipient"}
-    STATE -- "mismatch" --> PARK["park as awaiting_human<br/>hard block, no fallback"]
-    STATE -- "match" --> QUIET{"quiet hours in the<br/>recipient's own zone"}
-    QUIET -- "inside" --> DEFERR["defer to the window<br/>never dropped, always re-planned"]
+    ELIG -- "eligible" --> QUIET{"Quiet hours in the<br/>recipient's own zone?"}
+    QUIET -- "inside" --> DEFERR["defer to the window<br/>quiet-hours. Never dropped,<br/>always re-planned."]
     QUIET -- "outside, or the<br/>sequence sets the override" --> CAP
   end
 
+  subgraph gates["Runner gates, before any capacity is spent"]
+    CAP --> ACCOUNT{"Sending account usable?"}
+    ACCOUNT -- "no" --> PARKACC["park as awaiting_human<br/>sender-reason"]
+    ACCOUNT -- "yes" --> KEY{"API key for that account?"}
+    KEY -- "no" --> FAILKEY["recordStep as failed<br/>missing-telnyx-api-key.<br/>No claim held, so the retry ceiling<br/>is actually reachable."]
+    KEY -- "yes" --> TONUMBER{"A recipient number?"}
+    TONUMBER -- "no" --> SKIPNUM["recordStep as skipped<br/>no-number"]
+    TONUMBER -- "yes" --> POOLRES{"Pool sequence?<br/>reserve with consumeSender"}
+    POOLRES -- "nothing may send" --> POOLDEF["park sender-not-ready,<br/>or defer pool-rate-limited.<br/>No capacity token spent."]
+    POOLRES -- "reserved" --> CAP
+  end
+
   subgraph claim["The two claims, in this order"]
-    CAP["claimSendCapacity<br/>account ceiling, per-number bucket,<br/>campaign, brand"]
+    CAP["claimSendCapacity<br/>account ceiling, per-number bucket,<br/>campaign allowance.<br/>No brand bucket: brandId is never passed."]
     CAP --> CAPOK{"Capacity?"}
     CAPOK -- "no" --> DEFER["defer with lastSkipReason<br/>send-capacity-exhausted.<br/>No claim held, so the step retries."]
     CAPOK -- "yes" --> STEP["claimStep<br/>on this exact cursor"]
@@ -37,11 +87,12 @@ flowchart TD
 
   RECHECK["Re-read after the claim<br/>the stopping webhook runs in its own<br/>transaction and cannot interrupt this action,<br/>so this is the only safe place to notice"]
   RECHECK --> LIVE{"Still active, same cursor,<br/>has not replied?"}
-  LIVE -- "no" --> NOTSENT["record the outcome, send nothing"]
+  LIVE -- "no" --> NOTSENT["record the outcome, send nothing.<br/>stopped-during-claim, cursor-moved,<br/>or replied-before-send."]
   LIVE -- "yes" --> SEND["POST /v2/messages<br/>with the resolved profile"]
   SEND --> OUTCOME{"Result"}
   OUTCOME -- "delivered or accepted" --> RECORD["recordStep, applySchedule<br/>cursor advances, nextDueAt<br/>from the send time"]
-  OUTCOME -- "rate limited or transient" --> BACKOFF["scheduleRetry<br/>back off on the provider's code"]
+  OUTCOME -- "retryable provider failure" --> BACKOFF["scheduleRetry<br/>back off on the provider's code"]
+  OUTCOME -- "non-retryable provider failure" --> FAILED["recordStep as failed<br/>the enrollment is done"]
   OUTCOME -- "unknown whether it went out" --> AMBIG["recordStep as ambiguous.<br/>Never retried on a timer."]
 
   NOTE["The runner reads dueEnrollments and nothing<br/>else decides what is due, so a cron and a manual<br/>run cannot disagree about the queue."]:::note
@@ -51,6 +102,6 @@ flowchart TD
   classDef stop fill:#2a0f0f,stroke:#f87171,color:#f5f7ff
   classDef defer fill:#2a1f0f,stroke:#fbbf24,color:#f5f7ff
   classDef pure fill:#0f1f2a,stroke:#5ee7ff,color:#f5f7ff
-  class CTX,ELIG,STATE,QUIET pure
-  class PARK,NOTSENT,AMBIG stop
-  class DEFERR,DEFER,BACKOFF defer
+  class CTX,GUARD,CURSOR,READY,MACHINE,SENDERR,UNPLACE,PAST,ELIG,QUIET,ACCOUNT,KEY,TONUMBER,POOLRES,CAPOK,STEPOK,LIVE,OUTCOME pure
+  class PARK,PARKSEND,PARKACC,PARKZ,DONE,NOTSENT,FAILED,AMBIG,SKIPNUM stop
+  class DEFERR,SKIP,DEFER,BACKOFF,POOLPARK,POOLDEF,FAILKEY defer

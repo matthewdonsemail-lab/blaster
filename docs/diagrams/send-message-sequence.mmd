@@ -3,6 +3,7 @@
 %% in its own response rather than pretending to be equivalent. An inbound reply
 %% stops the peer's enrollments in the same transaction that stores it, then
 %% notifies the owning members without ever failing the webhook.
+%% fact: inbound-stop-order args.providerEventId>insert("messages">stopEnrollmentsForPeer
 sequenceDiagram
   autonumber
   actor Caller

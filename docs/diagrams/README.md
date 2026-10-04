@@ -60,7 +60,12 @@ where the schema composes 15. `data-model.mmd` listed 9 tables.
 what is serving, and said eighteen gates where `pnpm check` chains twenty-one.
 `enrollment-state-machine.mmd` claimed four top-level events where
 `machine.ts` declares three - RESUME is state-local, not global - and never drew
-the three that are.
+the three that are. `sequence-runner-tick.mmd` drew the runner's middle in the
+wrong order and claimed a capacity bucket the runner never claims, and omitted
+three gates that sit between quiet hours and that claim. Also corrected on
+2026-10-04, after the gate was found to be checking nothing:
+`guidance-and-ai-prompts.mmd` named `classifySendResult` as the inbound
+classifier, which it is not.
 
 The places that most often drift are the profile resolution order, the outbound
 skip rules, the enrollment state machine, the two-claim ordering in the runner,
@@ -68,22 +73,59 @@ the set of tables in `convex/schema.ts`, and the mounted components in
 `convex/convex.config.ts`.
 
 **What is pinned, and by what.** The profile resolution order and the outbound
-skip rules are pinned by tests. Since 2026-10-04 the counts are pinned too, by
+skip rules are pinned by tests. The counts and the orderings are pinned by
 `pnpm check:diagrams`: a diagram opts in by carrying a machine-readable
 annotation in its header, and the gate re-derives the value from the source and
-fails if the two disagree.
+fails if the two disagree. All 14 diagrams carry at least one.
 
 ```text
 %% fact: schema-tables 15
-%% fact: machine-top-level-events 3
+%% fact: machine-evaluating-order senderNotReady>recipientUnplaceable>...
 ```
 
-The eleven facts currently available are `schema-tables`, `schema-modules`,
-`mounted-components`, `cron-interval-seconds`, `cron-limit`,
-`machine-top-level-events`, `registry-entries`, `mcp-tools`, `guidance-seeds`,
-and `check-chain-steps`. Adding one means adding it to `facts()` in
-`scripts/check-diagrams.mjs`, which is the only supported way to make a
-diagram checkable.
+The 19 facts currently available are `schema-tables`, `schema-modules`,
+`mounted-components`, `cron-interval-seconds`, `cron-comment-seconds`,
+`cron-limit`, `machine-top-level-events`, `machine-evaluating-order`,
+`registry-entries`, `runner-gate-order`, `runner-capacity-args`,
+`inbound-stop-order`, `profile-reasons`, `notification-rules`,
+`max-batch-prospects`, `sequence-tables`, `graphql-expiry-code`, `mcp-tools`,
+`guidance-seeds` and `check-chain-steps`. Adding one means adding it to
+`facts()` in `scripts/check-diagrams.mjs`, which is the only supported way to
+make a diagram checkable.
+
+**A count cannot check an arrow, so the ordering facts exist.** The claims a
+reviewer is most likely to accept on trust and never check are the ones about
+order: that capacity is claimed before the step, that sender readiness is tested
+before eligibility, that a reply stops the enrollments in the same transaction
+that stores the message. `runner-gate-order`, `machine-evaluating-order`,
+`inbound-stop-order` and `profile-reasons` are the position of real tokens in
+real source, joined with `>`, so reversing two steps in the code fails the gate
+even though every count is unchanged.
+
+**What a fact does not check, and the annotation that does.** An ordering fact
+pins the *prose* in the annotation against the code. It says nothing about the
+arrows drawn in the flowchart: reorder the drawing, leave the annotation, and the
+fact still passes. That is what `%% edge-chain:` is for. It names the node ids of
+the load-bearing path, and the gate reads the drawn edges out of the same source
+and requires every consecutive pair to exist:
+
+```text
+%% edge-chain: CTX>GUARD>CURSOR>NUMBER>READY>MACHINE>SENDERR>...>CAP>CAPOK>STEP
+```
+
+Independent runs are separated by `/`. Only solid `-->` edges count, so a dotted
+note cannot carry a chain. `sequence-runner-tick.mmd` is the only diagram with
+one today. Both halves are asserted in `--self-test`: an `edge-chain` the
+drawing contradicts is rejected, and one it follows is accepted.
+
+**This gate checked nothing until 2026-10-04.** Its annotation reader matched
+`(?:%|//)`, which matches a single `%` and therefore never matched a Mermaid
+`%%` annotation. Every fact in every diagram was silently unchecked while the
+gate reported OK, which is why a diagram claiming a capacity bucket the runner
+never claims survived review. The reader now matches the marker as a whole token,
+and `pnpm check:diagrams --self-test` asserts both that a `%%` annotation is read
+and that at least one real diagram carries one - so a reader that quietly stops
+matching fails the gate rather than passing it.
 
 The gate never edits. A checker that rewrites documentation hides the drift
 instead of surfacing it, and a diagram nobody had to think about is not one
