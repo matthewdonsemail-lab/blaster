@@ -10,6 +10,8 @@ import {
   DEFAULT_OPTIONS,
   createBlasterApiClient,
   dryRunEnrollment,
+  parseDelayHours,
+  parseStepList,
   summarise,
   validateDraft,
   type BlasterApiClient,
@@ -73,26 +75,9 @@ export const RUNNER_GAPS: readonly string[] = [
   "Active runner: sequences are processed via Convex cron jobs and actions with 10DLC compliance verification, rate limiting, and pool rotation.",
 ];
 
-/**
- * A wait as the operator writes it: `30s`, `5m`, `2h`, `1d`, or a bare number of
- * hours. Steps store hours, so a 30-second test step is 30 / 3600 hours. Returns
- * null for anything else, so a typo is refused instead of becoming a zero wait.
- */
-export function parseDelayHours(input: string | number): number | null {
-  if (typeof input === "number") return Number.isFinite(input) && input >= 0 ? input : null;
-  const match = /^\s*(\d+(?:\.\d+)?)\s*([smhd]?)\s*$/i.exec(input);
-  if (!match) return null;
-  const value = Number(match[1]);
-  const unit = (match[2] || "h").toLowerCase();
-  const perHour = { s: 1 / 3600, m: 1 / 60, h: 1, d: 24 }[unit as "s" | "m" | "h" | "d"];
-  return value * perHour;
-}
+export { parseDelayHours };
 
-/**
- * Steps from `--steps '<json>'`: an array of `{ text, delay?, delayHours?, isStop? }`.
- * `delay` takes the units above; `delayHours` is a plain number. A problem is
- * returned as a message, never thrown, so the caller can print it and exit 1.
- */
+/** Steps from `--steps '<json>'`; see `parseStepList` for the shape. */
 export function parseStepsFlag(raw: string): { steps: SequenceStepDraft[] } | { error: string } {
   let parsed: unknown;
   try {
@@ -101,21 +86,7 @@ export function parseStepsFlag(raw: string): { steps: SequenceStepDraft[] } | { 
     return { error: "--steps must be a JSON array" };
   }
   if (!Array.isArray(parsed) || parsed.length === 0) return { error: "--steps must be a non-empty JSON array" };
-  const steps: SequenceStepDraft[] = [];
-  for (const [index, item] of parsed.entries()) {
-    const row = item as { text?: unknown; delay?: unknown; delayHours?: unknown; isStop?: unknown };
-    const label = `step ${index + 1}`;
-    if (!row || typeof row !== "object") return { error: `${label}: expected an object` };
-    const isStop = row.isStop === true;
-    if (!isStop && (typeof row.text !== "string" || row.text.trim() === "")) {
-      return { error: `${label}: text is required` };
-    }
-    const rawDelay = row.delay ?? row.delayHours ?? 0;
-    const delayHours = typeof rawDelay === "string" || typeof rawDelay === "number" ? parseDelayHours(rawDelay) : null;
-    if (delayHours === null) return { error: `${label}: delay must be like 30s, 5m, 2h, 1d or a number of hours` };
-    steps.push({ text: typeof row.text === "string" ? row.text : "", delayHours, isStop });
-  }
-  return { steps };
+  return parseStepList(parsed);
 }
 
 export function readRecipients(flags: Map<string, string | boolean>): Recipient[] {

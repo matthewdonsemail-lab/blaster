@@ -37,6 +37,7 @@ import {
   resolveMessagingProfile,
   searchAvailableNumbers,
   sendMessage,
+  parseStepList,
   summarise,
   uncoveredCountries,
   upsertAgencyPhone,
@@ -77,7 +78,7 @@ interface ToolDefinition {
  * One row per capability. Adding a capability means adding a row and an arm of
  * the switch in `runTool`; nothing else changes.
  */
-const TOOL_DEFINITIONS: ToolDefinition[] = [
+export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "blaster_breakdown",
     description:
@@ -403,7 +404,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       properties: {
         ref: { type: "string", description: "Short account reference, e.g. acct-a." },
         label: { type: "string", description: "Human label." },
-        status: { type: "string", enum: ["active", "burned", "disabled"], description: "New status." },
+        status: { type: "string", description: "New status: active, burned or disabled." },
         note: { type: "string", description: "Why, recorded with the status." },
       },
       required: ["ref"],
@@ -470,7 +471,7 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
         numberProfileId: { type: "string", description: "Optional Telnyx messaging profile id." },
         steps: {
           type: "array",
-          description: "Array of sequence steps: { text, delayHours, isStop }.",
+          description: "Array of sequence steps: { text, delay, isStop }. delay is like 30s, 5m, 2h or 1d (a bare number is hours); delayHours is also accepted. A stop step needs no text.",
         },
         options: {
           type: "object",
@@ -1224,10 +1225,12 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
     case "blaster_register_sequence": {
       const name = typeof args.name === "string" ? args.name : "";
       const fromNumber = typeof args.fromNumber === "string" ? args.fromNumber : "";
-      const steps = Array.isArray(args.steps) ? (args.steps as never) : [];
-      if (!name || !fromNumber || steps.length === 0) {
+      if (!name || !fromNumber || !Array.isArray(args.steps) || args.steps.length === 0) {
         return { text: "name, fromNumber, and at least one step are required." };
       }
+      const parsedSteps = parseStepList(args.steps);
+      if ("error" in parsedSteps) return { text: `Invalid steps: ${parsedSteps.error}.` };
+      const steps = parsedSteps.steps;
       try {
         const result = await blasterApi().registerSequence({
           name,

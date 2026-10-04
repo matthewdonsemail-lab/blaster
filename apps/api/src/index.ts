@@ -86,7 +86,7 @@ import {
   setSequenceStatus,
   setSuppression,
 } from "./lib/convex/index.ts";
-import { operatorIdentity, requireOperator, resolveOperatorActor } from "./lib/auth/operator/index.ts";
+import { requireOperator, resolveOperatorActor } from "./lib/auth/operator/index.ts";
 import { AGENCY_PROSPECTS_OBJECT, broadcastReply, classifyMessageRules, promoteProspectToLead } from "@blaster/core";
 import {
   eventTypeOf,
