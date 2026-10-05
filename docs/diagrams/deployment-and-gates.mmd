@@ -1,43 +1,85 @@
-%% What ships where, and what has to pass before anything is pushed.
+%% What ships where, and the twenty-one gates that run before a push.
+%% ---
+%% Corrected 2026-10-04. The previous version listed six gates; `pnpm check`
+%% chains twenty-one steps, and the order matters because the cheap ones fail
+%% fastest. Five of those steps are `*:self-test` runs that prove the gate can
+%% still fail, and each one is chained immediately before the gate it protects.
+%% Two of the twenty-one, `check:diagrams`, are new on this date: they parse
+%% every `.mmd` file and re-check the facts the diagrams assert against the
+%% code, so a diagram that drifts from the code fails the push instead of
+%% quietly misleading a reader.
+%% It also described only the Railcode target. Vercel is what is actually
+%% serving, so both are drawn.
+%% ---
+%% fact: check-chain-steps 21
 flowchart TB
-  subgraph hosting["Hosting"]
+  subgraph hosting["What is actually serving"]
+    DOMAIN["blaster.listeningkit.com<br/>Cloudflare A record, DNS only"]
+    VERCEL["Vercel project blaster-web<br/>builds on every push to main<br/>apps/web + a bundled API function"]
+    HONOFN["the single serverless function<br/>apps/api/src/index.ts via<br/>scripts/build-api-function.mjs"]
+    MCPAT["/mcp answers on the same function"]
+    CVX["Convex Cloud<br/>dev:bold-caribou-638<br/>functions, schema, crons, components"]
+    TWENTYHOST["Twenty workspace<br/>twenty.inferencesaver.com"]
+  end
+
+  subgraph intended["The intended target"]
     RAIL["railcode.dev<br/>private Railcode app"]
-    CVX["Convex Cloud<br/>functions, schema, components"]
-    TWENTYHOST["Twenty workspace"]
   end
 
   subgraph repo["Repository"]
     CFG[("railcode.json<br/>app, type, server")]
     MAN[("manifest.yaml<br/>run_as app, twenty connector")]
+    VC[("vercel.json<br/>rewrites are load-bearing:<br/>a route not listed there<br/>gets the SPA, not the API")]
     HOOK[("lefthook.yml<br/>pre-push")]
-    ENVF[("config/env-vars.json")]
-    SECRET[".env.local<br/>gitignored"]
+    ENVF[("config/env-vars.json<br/>the manifest")]
+    SECRET[(".env.local<br/>gitignored")]
   end
 
   CFG --> RAIL
   MAN --> RAIL
-  RAIL --> CVX
+  VC --> VERCEL
+  VERCEL --> DOMAIN
+  VERCEL --> HONOFN
+  VERCEL --> MCPAT
+  CVX -. "separate track:<br/>pnpm convex:deploy" .-> RAIL
   RAIL --> TWENTYHOST
 
   ENVF -. "names only" .-> SECRET
-  SECRET -. "values" .-> RAIL
+  SECRET -. "values" .-> VERCEL
   SECRET -. "values" .-> CVX
 
-  subgraph gates["Pre-push gates, cheapest first"]
-    G1["check:naming<br/>library/domainname/helpers"]
-    G2["check:env<br/>manifest and code agree"]
-    G3["check:no-emoji"]
-    G4["check:no-font-mono"]
-    G5["typecheck<br/>four packages, strict"]
-    G6["test"]
+  subgraph gates["pnpm check - 21 chained steps, cheapest first"]
+    G1["1-2 check:secrets:self-test, check:secrets<br/>no credentials in tracked files"]
+    G2["3-4 check:goal:self-test, check:goal<br/>goal.md is a current outline"]
+    G3["5 check:naming<br/>library/domainname/helpers"]
+    G4["6-7 check:convex:self-test, check:convex<br/>no api.* from convex/, no barrels"]
+    G5["8-9 check:surfaces:self-test, check:surfaces<br/>capability registry agrees with<br/>CLI, MCP and HTTP in both directions"]
+    G6["10 check:env<br/>manifest and code agree"]
+    G7["11-13 check:generated-client,<br/>check:generated, check:twenty-objects"]
+    G8["14-15 check:diagrams:self-test, check:diagrams<br/>every .mmd parses, and each fact<br/>a diagram asserts is re-derived<br/>from the code"]
+    G9["16-18 check:no-emoji, check:no-font-mono,<br/>check:encoding"]
+    G10["19 typecheck<br/>five projects, strict"]
+    G11["20 lint"]
+    G12["21 test"]
   end
 
-  HOOK --> G1 --> G2 --> G3 --> G4 --> G5 --> G6
-  G6 --> OK["Ready to push"]
+  HOOK --> G1 --> G2 --> G3 --> G4 --> G5 --> G6 --> G7 --> G8 --> G9 --> G10 --> G11 --> G12
+  G12 --> OK["Ready to push"]
 
-  NOTE["check:env fails in both directions: a variable declared but<br/>unread is dead weight, and a variable read but undeclared is a<br/>dependency nobody documented. A planned variable must carry a reason."]:::note
-  G2 -.-> NOTE
+  NOTE["check:env fails in both directions: a variable declared but<br/>unread is dead weight, and a variable read but undeclared is a<br/>dependency nobody documented."]:::note
+  G6 -.-> NOTE
+
+  NOTE3["A *:self-test runs a known-bad input through its own gate<br/>and fails if the gate passes it. Five gates have one, because<br/>a gate that cannot fail is indistinguishable from no gate."]:::note
+  G1 -.-> NOTE3
+
+  NOTE4["check:diagrams is the only gate that reads the documentation.<br/>It never edits: a checker that rewrites docs hides the drift<br/>instead of surfacing it, and a diagram nobody had to think<br/>about is not one anybody should trust."]:::note
+  G8 -.-> NOTE4
+
+  NOTE2["vercel.json has one API function, so every route it serves<br/>must be in rewrites. A POST to /mcp returned 405<br/>until it was added there."]:::note
+  VC -.-> NOTE2
 
   classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
   classDef store fill:#1b1030,stroke:#7c5cff,color:#f5f7ff
-  class CFG,MAN,ENVF store
+  classDef live fill:#0f2a1c,stroke:#4ade80,color:#f5f7ff
+  class CFG,MAN,VC,ENVF store
+  class DOMAIN,VERCEL live

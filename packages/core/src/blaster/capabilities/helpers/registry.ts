@@ -113,12 +113,13 @@ export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
     title: "List outreach sequences",
     description: "List outreach sequences, newest first, with step counts, statuses, and assigned pools.",
     mutating: false,
-    intendedSurfaces: ["convex", "http", "client", "cli"],
+    intendedSurfaces: ["convex", "http", "client", "cli", "mcp"],
     mappings: {
       convex: "api.sequence.queries.listSequences",
       http: "GET /api/sequences",
       client: "listSequences",
       cli: "blaster sequence list",
+      mcp: "blaster_list_sequences",
     },
   },
   {
@@ -128,12 +129,13 @@ export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
     title: "Get outreach sequence",
     description: "Read a single sequence with its step configuration, sender options, and status.",
     mutating: false,
-    intendedSurfaces: ["convex", "http", "client", "cli"],
+    intendedSurfaces: ["convex", "http", "client", "cli", "mcp"],
     mappings: {
       convex: "api.sequence.queries.getSequence",
       http: "GET /api/sequences/:id",
       client: "getSequence",
       cli: "blaster sequence show",
+      mcp: "blaster_get_sequence",
     },
   },
   {
@@ -620,10 +622,11 @@ export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
     title: "List prospect filter fields",
     description: "Get the menu of filterable prospect fields introspected from Twenty CRM.",
     mutating: false,
-    intendedSurfaces: ["http", "client"],
+    intendedSurfaces: ["http", "client", "mcp"],
     mappings: {
       http: "GET /api/prospects/fields",
       client: "listProspectFields",
+      mcp: "blaster_list_prospect_fields",
     },
   },
   {
@@ -633,10 +636,11 @@ export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
     title: "Search prospects by filter",
     description: "Search a page of prospects in Twenty CRM matching caller-supplied filter criteria.",
     mutating: false,
-    intendedSurfaces: ["http", "client"],
+    intendedSurfaces: ["http", "client", "mcp"],
     mappings: {
       http: "POST /api/prospects/search",
       client: "searchProspects",
+      mcp: "blaster_search_prospects",
     },
   },
   {
@@ -646,10 +650,11 @@ export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
     title: "Preview prospect batch send",
     description: "Preview eligibility breakdown and recipient count for a filtered prospect batch send.",
     mutating: false,
-    intendedSurfaces: ["http", "client"],
+    intendedSurfaces: ["http", "client", "mcp"],
     mappings: {
       http: "POST /api/messages/preview",
       client: "previewProspectSend",
+      mcp: "blaster_preview_prospect_send",
     },
   },
   {
@@ -659,10 +664,11 @@ export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
     title: "Batch send to prospects",
     description: "Execute batch SMS delivery to eligible prospects matching filter criteria with idempotency.",
     mutating: true,
-    intendedSurfaces: ["http", "client"],
+    intendedSurfaces: ["http", "client", "mcp"],
     mappings: {
       http: "POST /api/messages/batch-send",
       client: "sendToProspects",
+      mcp: "blaster_send_to_prospects",
     },
   },
 
@@ -804,6 +810,33 @@ export const CAPABILITY_REGISTRY: readonly CapabilityDefinition[] = [
     intendedSurfaces: ["cli"],
     mappings: {
       cli: "blaster whoami",
+    },
+  },
+  {
+    id: "sending.numbers",
+    resource: "sendingNumbers",
+    operation: "listSendingNumbers",
+    title: "List sending numbers",
+    description: "List the numbers a batch send can use, with the agencyPhoneId the send takes.",
+    mutating: false,
+    intendedSurfaces: ["http", "client", "mcp"],
+    mappings: {
+      http: "GET /api/agency-phones",
+      client: "listSendingNumbers",
+      mcp: "blaster_list_sending_numbers",
+    },
+  },
+  {
+    id: "messaging.profiles",
+    resource: "messaging",
+    operation: "listMessagingProfiles",
+    title: "List Telnyx messaging profiles",
+    description: "List the messaging profiles Telnyx actually has, so configuration gaps are visible.",
+    mutating: false,
+    intendedSurfaces: ["http", "mcp"],
+    mappings: {
+      http: "GET /api/messaging/profiles",
+      mcp: "blaster_list_messaging_profiles",
     },
   },
 ] as const;

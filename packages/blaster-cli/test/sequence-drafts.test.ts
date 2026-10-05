@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { DEFAULT_OPTIONS, type Recipient, type SequenceDraft } from "@blaster/core";
-import { RUNNER_GAPS, planFor, type SequenceContext } from "../src/cli/sequence.ts";
+import { RUNNER_GAPS, draftFromSequence, planFor, parseStepsFlag, type SequenceContext } from "../src/cli/sequence.ts";
 
 /**
  * The Convex-only draft lifecycle and the compliance plan.
@@ -179,6 +179,44 @@ describe("the compliance plan", () => {
     const pacific = planFor(DRAFT, [recipient({ stateCode: "CA" })], twentyOneEastern, allow)[0];
     expect(east?.timeZone).toBe("America/New_York");
     expect(pacific?.timeZone).toBe("America/Los_Angeles");
+  });
+});
+
+describe("describing a stored sequence", () => {
+  const target = { name: "abel-live-3step", poolId: null };
+
+  test("the steps the API returns are the steps that get shown", () => {
+    const draft = draftFromSequence(target, {
+      fromNumber: "+12724470148",
+      options: { stopOnReply: true },
+      steps: [
+        { text: "step 1", delayHours: 0, isStop: false },
+        { text: "step 2", delayHours: 0.00833, isStop: false },
+        { text: "step 3", delayHours: 0.00833, isStop: false },
+      ],
+    });
+    expect(draft?.fromNumber).toBe("+12724470148");
+    expect(draft?.steps).toHaveLength(3);
+    expect(draft?.steps[1]?.text).toBe("step 2");
+  });
+
+  test("a read with no steps is not described with a made-up one", () => {
+    // This is the bug: the old fallback printed "+10000000000" and a single
+    // "Step 1", which read like a real sequence nobody had written.
+    expect(draftFromSequence(target, null)).toBeNull();
+    expect(draftFromSequence(target, {})).toBeNull();
+    expect(draftFromSequence(target, { fromNumber: "+12724470148" })).toBeNull();
+    expect(draftFromSequence(target, { fromNumber: "+12724470148", steps: [] })).toBeNull();
+  });
+});
+
+describe("an explicit --steps wins over a resumed draft", () => {
+  test("the flag parses the way the documented example does", () => {
+    const parsed = parseStepsFlag(
+      '[{"text":"one","delay":"0"},{"text":"two","delay":"30s"},{"text":"three","delay":"30s"}]',
+    );
+    expect("error" in parsed).toBe(false);
+    expect("steps" in parsed && parsed.steps).toHaveLength(3);
   });
 });
 

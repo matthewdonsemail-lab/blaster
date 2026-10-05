@@ -31,6 +31,7 @@ import {
   evaluateNotifications,
   fromAgencyPhoneRecord,
   listAgencyPhones,
+  listMessagingProfiles,
   listOwnedNumbers,
   missingRequired,
   notificationStateKey,
@@ -46,6 +47,7 @@ import {
   type Breakdown,
   type NumberFeature,
   type NumberType,
+  type ProspectFilter,
   type Recipient,
   type SequenceDraft,
   type TwentyRecord,
@@ -576,6 +578,90 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         sequenceId: { type: "string", description: "The Convex sequence id to delete." },
       },
       required: ["sequenceId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_list_sending_numbers",
+    description:
+      "The sending numbers a batch send can use, with the agencyPhoneId that blaster_preview_prospect_send and blaster_send_to_prospects take. Only numbers that have a messaging profile and are not still available.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "blaster_list_messaging_profiles",
+    description: "The messaging profiles Telnyx actually has, so configuration gaps are visible. Requires TELNYX_API_KEY.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "blaster_list_sequences",
+    description: "List committed outreach sequences, newest first, with status and the pool each is assigned to.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "blaster_get_sequence",
+    description:
+      "Read one committed sequence with its steps, sender options and status. Reports a failed read as a failure, not as an empty sequence.",
+    inputSchema: {
+      type: "object",
+      properties: { sequenceId: { type: "string", description: "The sequence id." } },
+      required: ["sequenceId"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_list_prospect_fields",
+    description:
+      "The fields a prospect search or batch send can filter on, with the operators each allows. Names are Twenty field API names. Read this before building filters.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "blaster_search_prospects",
+    description: "One page of prospects matching the filters. Sends nothing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filters: {
+          type: "array",
+          description: "Filter clauses: { field, operator, value }. Field and operator must come from blaster_list_prospect_fields.",
+        },
+        cursor: { type: "string", description: "nextCursor from the previous page." },
+        limit: { type: "number", description: "Page size." },
+      },
+      required: ["filters"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_preview_prospect_send",
+    description:
+      "What a batch send would do: total matched, eligible, skipped, and a sample. Sends nothing. Run this and check the numbers before blaster_send_to_prospects.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agencyPhoneId: { type: "string", description: "The sending number's agencyPhones record id." },
+        filters: { type: "array", description: "Filter clauses: { field, operator, value }." },
+        text: { type: "string", description: "Message body." },
+      },
+      required: ["agencyPhoneId", "filters", "text"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "blaster_send_to_prospects",
+    description:
+      "SENDS REAL SMS to every eligible prospect matching the filters, from one sending number. Run blaster_preview_prospect_send first and confirm the eligible count. Returns every recipient's outcome.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agencyPhoneId: { type: "string", description: "The sending number's agencyPhones record id." },
+        filters: { type: "array", description: "Filter clauses: { field, operator, value }." },
+        text: { type: "string", description: "Message body." },
+        idempotencyKey: {
+          type: "string",
+          description: "Run correlator echoed in the result. The server does not dedupe, so a retried key sends again.",
+        },
+      },
+      required: ["agencyPhoneId", "filters", "text", "idempotencyKey"],
       additionalProperties: false,
     },
   },
@@ -1409,6 +1495,119 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<Too
         const result = await blasterApi().deleteSequence(sequenceId);
         return {
           text: result.deleted ? `Deleted sequence ${sequenceId}.` : `Sequence ${sequenceId} could not be deleted.`,
+          structured: result,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_list_sending_numbers": {
+      try {
+        const numbers = await blasterApi().listSendingNumbers();
+        return {
+          text: numbers.length === 0 ? "No sending numbers." : `${numbers.length} sending number(s).`,
+          structured: { count: numbers.length, phones: numbers },
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_list_messaging_profiles": {
+      const apiKey = process.env.TELNYX_API_KEY;
+      if (!apiKey) throw new Error("configuration: TELNYX_API_KEY not set");
+      const profiles = await listMessagingProfiles(apiKey);
+      return { text: `${profiles.length} messaging profile(s).`, structured: { profiles } };
+    }
+
+    case "blaster_list_sequences": {
+      try {
+        const sequences = await blasterApi().listSequences();
+        return {
+          text: sequences.length === 0 ? "No sequences." : `${sequences.length} sequence(s).`,
+          structured: { count: sequences.length, sequences },
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_get_sequence": {
+      const sequenceId = typeof args.sequenceId === "string" ? args.sequenceId : "";
+      if (!sequenceId) return { text: "sequenceId is required." };
+      try {
+        const sequence = await blasterApi().getSequence(sequenceId);
+        if (!sequence) return { text: `Sequence ${sequenceId} not found.` };
+        return { text: `Sequence "${sequence.name}" (${sequenceId}).`, structured: sequence };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_list_prospect_fields": {
+      try {
+        const fields = await blasterApi().listProspectFields();
+        return { text: `${fields.length} filterable field(s).`, structured: { fields } };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_search_prospects": {
+      if (!Array.isArray(args.filters)) return { text: "filters is required (an array, possibly empty)." };
+      try {
+        const selection = await blasterApi().searchProspects({
+          filters: args.filters as ProspectFilter[],
+          cursor: typeof args.cursor === "string" ? args.cursor : undefined,
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+        });
+        return {
+          text: `${selection.prospects.length} of ${selection.total} prospect(s) on this page.`,
+          structured: selection,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_preview_prospect_send": {
+      const agencyPhoneId = typeof args.agencyPhoneId === "string" ? args.agencyPhoneId : "";
+      const text = typeof args.text === "string" ? args.text : "";
+      if (!agencyPhoneId || !text || !Array.isArray(args.filters)) {
+        return { text: "agencyPhoneId, filters and text are required." };
+      }
+      try {
+        const preview = await blasterApi().previewProspectSend({
+          agencyPhoneId,
+          filters: args.filters as ProspectFilter[],
+          text,
+        });
+        return {
+          text: `${preview.eligible} eligible, ${preview.skipped} skipped, of ${preview.total} matched. Nothing was sent.`,
+          structured: preview,
+        };
+      } catch (error) {
+        return { text: describeApiError(error) };
+      }
+    }
+
+    case "blaster_send_to_prospects": {
+      const agencyPhoneId = typeof args.agencyPhoneId === "string" ? args.agencyPhoneId : "";
+      const text = typeof args.text === "string" ? args.text : "";
+      const idempotencyKey = typeof args.idempotencyKey === "string" ? args.idempotencyKey : "";
+      if (!agencyPhoneId || !text || !idempotencyKey || !Array.isArray(args.filters)) {
+        return { text: "agencyPhoneId, filters, text and idempotencyKey are required." };
+      }
+      try {
+        const result = await blasterApi().sendToProspects({
+          agencyPhoneId,
+          filters: args.filters as ProspectFilter[],
+          text,
+          idempotencyKey,
+        });
+        return {
+          text: `Batch ${result.idempotencyKey} from ${result.from}: ${result.sent} sent, ${result.skipped} skipped, ${result.failed} failed of ${result.total}.`,
           structured: result,
         };
       } catch (error) {

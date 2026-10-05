@@ -6,51 +6,121 @@
 
 Blaster reads a Twenty CRM workspace, reports what the pipeline actually looks
 like, and sends SMS through the Telnyx messaging profile registered for the
-recipient's country. It is internally deployed software on `railcode.dev`, and
-it is reachable three ways: a CLI, an MCP server, and an HTTP API.
+recipient's country. It is internally deployed software on `railcode.dev`.
+
+An operator or an agent reaches it four ways: a CLI, an MCP server over two
+transports, the Hono HTTP API, and Convex's own HTTP router. Only one rule lives
+in any of them — `packages/core`. The diagram below is the whole entry surface,
+including which routes deliberately skip the operator gate; read
+[docs/diagrams/entrypoints-and-transports.mmd](docs/diagrams/entrypoints-and-transports.mmd)
+before adding a command, a tool, or a route.
 
 ```mermaid
 flowchart TB
-  subgraph clients["Clients"]
-    CLI["blaster CLI"]
-    MCP["blaster-mcp<br/>MCP over stdio"]
-    WEB["HTTP callers"]
+  subgraph callers["Callers"]
+    HUMAN["Operator, at a terminal"]
+    AGENT["Agent, local<br/>Claude Code, Codex"]
+    AGONLINE["Agent, hosted<br/>anything speaking MCP over HTTP"]
+    WEB["Browser<br/>apps/web, Vite SPA"]
+    WEBHOOK["Telnyx<br/>status and inbound webhooks"]
+    DIRECT["Direct Convex client<br/>a script with the deployment URL"]
   end
-  subgraph api["Request surface"]
-    HONO["Hono worker - apps/api<br/>Railcode app on railcode.dev"]
-  end
-  subgraph core["Domain library - packages/core"]
-    CLIENT["twenty/client"]
-    MSG["telnyx/messaging"]
-    BRK["pipeline/breakdown"]
-    ENV["platform/env"]
-  end
-  subgraph convex["Convex backend"]
-    FN["blaster.ts<br/>queries and mutations"]
-    TREG["treg component"]
-    TEL["telnyx component"]
-  end
-  TWENTY[("Twenty CRM")]
-  TELNYX["Telnyx API"]
-  MANIFEST[("config/env-vars.json")]
 
-  CLI --> core
-  MCP --> core
-  WEB --> HONO
-  HONO --> core
-  HONO -. "writes" .-> FN
+  subgraph surfaces["The four caller-facing surfaces"]
+
+    subgraph clisurf["1. CLI - packages/blaster-cli"]
+      CLIMAIN["index.ts main()<br/>hand-rolled parseArgs, no framework"]
+      CLICAP["CAPABILITIES table<br/>54 rows, mirrors the registry"]
+      CLIGRP["Groups: sequence, pool, phones,<br/>numbers, accounts, suppress,<br/>enrollments, inbox, conversation"]
+    end
+
+    subgraph mcpsurf["2. MCP - packages/blaster-mcp, 50 tools"]
+      MCPSTDIO["stdio transport<br/>startServer(), spawned by plugins/blaster"]
+      MCPHTTP["Streamable HTTP<br/>createHostedMcpHandler()<br/>mounted at ALL /mcp"]
+      MCPHAND["tools/list and tools/call<br/>TOOL_DEFINITIONS is the source"]
+    end
+
+    subgraph honosurf["3. Hono - apps/api, the primary HTTP surface"]
+      HONOAPP["Hono app on port 4180<br/>60+ routes, five mounted sub-apps"]
+      HONOGATE["requireOperator<br/>Twenty OAuth introspection"]
+      HONOOPEN["Ungated by design:<br/>GET /api/env,<br/>/api/auth/*,<br/>POST /api/webhooks/telnyx"]
+    end
+
+    subgraph cvxsurf["4. Convex httpRouter - convex/http.ts"]
+      CVXHTTP["On the deployment's own site<br/>five registrars: blaster,<br/>conversations, pool, sequence,<br/>suppressions"]
+      CVXFN["Convex functions<br/>public api.* and internal.*"]
+    end
+  end
+
+  subgraph core["Domain library - packages/core, the only place a rule lives"]
+    REGISTRY[("capability registry<br/>54 entries")]
+    CLIENT["BlasterApiClient<br/>~40 methods,<br/>errors normalised"]
+    CORELIB["twenty, telnyx, pipeline,<br/>guidance, platform"]
+  end
+
+  subgraph auth["Credentials, and what each one opens"]
+    SESSION["Session file<br/>access + refresh token"]
+    OAUTHTOK["Bearer token<br/>checked against Twenty"]
+    TELNYXKEY["TELNYX_API_KEY"]
+    CVXKEY["Deployment URL<br/>no admin key in the browser"]
+  end
+
+  HUMAN --> CLIMAIN
+  AGENT --> MCPSTDIO
+  AGONLINE --> MCPHTTP
+
+  CLIMAIN --> CLICAP
+  CLIMAIN --> CLIGRP
+  CLIGRP --> CLIENT
+  CLIMAIN --> SESSION
+
+  MCPSTDIO --> MCPHAND
+  MCPHTTP --> MCPHAND
+  MCPHAND -. "stateful operator work calls<br/>back into Hono as the caller" .-> HONOAPP
+  MCPHAND --> CORELIB
+  MCPSTDIO --> SESSION
+
+  WEB --> HONOAPP
+  WEBHOOK --> HONOAPP
+
+  HONOAPP --> HONOGATE
+  HONOGATE --> OAUTHTOK
+  HONOAPP --> HONOOPEN
+  HONOOPEN -. "the webhook cannot carry a<br/>bearer token, so it is not gated" .-> WEBHOOK
+
+  DIRECT --> CVXHTTP
+  DIRECT --> CVXFN
+  CVXHTTP --> CVXKEY
+
+  CLICAP -. "declared here" .-> REGISTRY
+  MCPHAND -. "declared here" .-> REGISTRY
+  HONOAPP -. "declared here" .-> REGISTRY
+  REGISTRY --> CLIENT
+  CLIENT --> CORELIB
+
+  CVXHTTP -. "must have a Hono twin" .-> HONOAPP
+
+  TWENTY[("Twenty<br/>the identity authority<br/>and the system of record")]
+  TELNYX[("Telnyx")]
+  OAUTHTOK --> TWENTY
   CLIENT --> TWENTY
-  MSG --> TELNYX
-  BRK --> CLIENT
-  MANIFEST -. "read by" .-> core
-  MANIFEST -. "read by" .-> convex
-  TREG --> FN
-  TEL --> FN
+  CORELIB --> TELNYX
+  TELNYXKEY --> TELNYX
 
+  NOTE1["Convex imports core by relative path,<br/>not as a package: convex/sequence/actions.ts<br/>reaches ../../packages/core/src/...<br/>directly. One copy of every rule,<br/>reached two ways."]:::note
+  CVXFN -.-> NOTE1
+  CORELIB -.-> NOTE1
+
+  NOTE2["Adding a surface means adding a row,<br/>not a new implementation. A tool with no<br/>registry entry fails check:surfaces,<br/>and so does a registry entry with<br/>no tool."]:::note
+  REGISTRY -.-> NOTE2
+
+  classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
   classDef store fill:#1b1030,stroke:#7c5cff,color:#f5f7ff
   classDef ext fill:#0b1020,stroke:#5ee7ff,color:#f5f7ff
+  classDef cred fill:#2a1f0f,stroke:#fbbf24,color:#f5f7ff
+  class REGISTRY store
   class TWENTY,TELNYX ext
-  class MANIFEST store
+  class SESSION,OAUTHTOK,TELNYXKEY,CVXKEY cred
 ```
 
 ## What it does
@@ -166,16 +236,22 @@ MCP tools: `blaster_breakdown`, `blaster_env`, `blaster_messaging_profile`,
 
 ```
 apps/api             Hono HTTP surface (the Railcode worker)
-convex/              Convex backend: schema, treg + telnyx components, functions
+convex/              Convex backend: 15 tables over 7 domain files,
+                     the httpRouter, the sequence cron, and two mounted
+                     components (@convex-dev/agent, @convex-dev/rate-limiter)
 packages/core        The domain. Every business rule lives here
   src/twenty/client        Twenty REST client, unwrapping, keyset paging
   src/telnyx/messaging     Profile resolution and the Telnyx client
   src/pipeline/breakdown   The breakdown builder and notification rules
+  src/pipeline/sequence    The enrollment state machine and its rules
+  src/guidance/prompts     The eight deterministic reply templates
+  src/blaster/capabilities The capability registry, 54 entries
   src/platform/env         The environment manifest reader
 packages/blaster-cli  The blaster binary
-packages/blaster-mcp  The blaster-mcp server
+packages/blaster-mcp  The blaster-mcp server, 50 tools over two transports
+plugins/blaster      Plugin manifest, MCP registration, five operator skills
 config/env-vars.json  The environment contract every surface reads
-docs/                Architecture and the naming convention
+docs/                Architecture, and the Mermaid sources in docs/diagrams/
 scripts/             The pre-push gates
 ```
 
@@ -444,34 +520,53 @@ pattern.
   Twenty sharp edges, and the profile rules
 - [docs/naming-conventions.md](docs/naming-conventions.md) — the required
   directory structure
-- [docs/diagrams/](docs/diagrams/) — ten Mermaid diagrams covering the system
-  overview, profile resolution, the breakdown and notification flow, the data
-  model, the send sequence, the sequence builder, Twenty auth paths,
-  deployment, and the gates
+- [docs/diagrams/](docs/diagrams/) — fourteen Mermaid diagrams covering the
+  entry points and transports, the system overview, profile resolution, the
+  breakdown and notification flow, the data model, the send sequence, the
+  sequence builder, the enrollment state machine, one tick of the runner, the
+  reply prompts, Twenty auth paths, deployment, and the gates
 - [docs/sequencer.md](docs/sequencer.md) — the multi-step sequencer: what is
   finished, what is not, and the exact gaps before a draft can run itself
+- [docs/production-readiness.md](docs/production-readiness.md) — what has been
+  proven against a live carrier, and what has not
 
 ## Diagrams
 
-The two decisions worth seeing before reading code. The full set is in
-[docs/diagrams/](docs/diagrams/).
+Every diagram below is a verbatim copy of its source in
+[docs/diagrams/](docs/diagrams/), and `pnpm check:diagrams` fails the push if a
+copy drifts from its source or if a fact a diagram asserts stops being true. The
+full set, and which ones to read first, are indexed there.
 
 **Profile resolution, which happens before every send:**
 
 ```mermaid
 flowchart TD
-  START["Send one SMS"] --> BOUND{"Sending number<br/>declares a profile?"}
-  BOUND -- "yes" --> BOUNDWIN["Use the bound profile<br/>bound-to-number"]
-  BOUND -- "no" --> PARSE["Resolve the recipient country<br/>libphonenumber-js"]
-  PARSE --> MAP{"Country registered in<br/>TELNYX_MESSAGING_PROFILES?"}
-  MAP -- "yes" --> HIT["Use the country profile<br/>recipient-country"]
-  MAP -- "no" --> DEFAULT{"Default set?"}
-  DEFAULT -- "yes" --> WARN["Default profile, plus a warning<br/>naming the variable to set"]
-  DEFAULT -- "no" --> NONE["Refuse to send<br/>no-profile-configured"]
-  BOUNDWIN --> SEND["POST /v2/messages"]
-  HIT --> SEND
-  WARN --> SEND
+  START["Send one SMS"] --> BOUND{"Sending number declares<br/>a profile?"}
+  BOUND -- "yes, operator set it" --> BOUNDWIN["Use the bound profile<br/>reason: bound-to-number"]
+  BOUND -- "no" --> PARSE["Resolve the recipient country"]
 
+  PARSE --> SRC{"Where does the country<br/>come from?"}
+  SRC -- "explicit country field" --> USEC["Use it"]
+  SRC -- "otherwise parse the number" --> NUM["libphonenumber-js<br/>strict parse"]
+  NUM --> RES{"Country resolved?"}
+  RES -- "no" --> UNRES["Country stays null<br/>an unparseable number is not guessed at"]
+  RES -- "yes" --> USEC
+  USEC --> MAP{"Country registered in<br/>TELNYX_MESSAGING_PROFILES?"}
+
+  MAP -- "yes" --> HIT["Use the country profile<br/>reason: recipient-country"]
+  MAP -- "no" --> DEFAULT{"Default profile set?"}
+  DEFAULT -- "yes" --> WARN["Fall back to the default<br/>reason: default-fallback<br/>plus a warning naming the variable"]
+  DEFAULT -- "no" --> NONE["Refuse to send<br/>reason: no-profile-configured"]
+
+  BOUNDWIN --> DONE["POST /v2/messages"]
+  HIT --> DONE
+  WARN --> DONE
+  UNRES --> DEFAULT
+
+  NOTE["US needs 10DLC. IE and GB cannot use 10DLC at all<br/>and need an alphanumeric sender. A message sent from the<br/>wrong registration is accepted by Telnyx and then rejected<br/>by the carrier, so this is resolved before the send."]:::note
+  DONE -.-> NOTE
+
+  classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
   classDef good fill:#0f2a1c,stroke:#4ade80,color:#f5f7ff
   classDef warn fill:#2a1f0f,stroke:#fbbf24,color:#f5f7ff
   classDef stop fill:#2a0f0f,stroke:#f87171,color:#f5f7ff
@@ -484,15 +579,33 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-  READ["Read agencyLeads and agencyCalls"] --> BUILD["buildBreakdown<br/>pure"]
-  BUILD --> RULES["evaluateNotifications<br/>thresholds over the breakdown"]
-  RULES --> KEY["stateKey is the sorted set<br/>of firing rule ids"]
-  KEY --> SEEN{"Already delivered?"}
-  SEEN -- "yes" --> SUPPRESS["Suppress. Do not re-announce<br/>an unchanged condition."]
-  SEEN -- "no" --> RECORD["recordNotification<br/>keyed by stateKey"]
+  READ["Read agencyLeads and agencyCalls<br/>keyset paging on id"] --> NORMAL["Unwrap whichever envelope<br/>Twenty returned"]
+  NORMAL --> SELECT["Read every SELECT through<br/>selectValue, since a select arrives<br/>as a string or as value/label"]
+
+  SELECT --> BUILD["buildBreakdown<br/>pure function"]
+  BUILD --> SLICES["Count into slices<br/>lead status, call outcome"]
+  SLICES --> RATES["Rates and averages<br/>answer rate, conversion,<br/>average duration"]
+
+  RATES --> RULES["evaluateNotifications<br/>thresholds over the breakdown"]
+  RULES --> FIRED{"Any rule fires?"}
+  FIRED -- "no" --> NONE["stateKey is none"]
+  FIRED -- "yes" --> KEY["stateKey is the sorted set<br/>of firing rule ids"]
+
+  KEY --> SEEN{"Has this exact set<br/>been delivered?"}
+  SEEN -- "yes" --> SUPPRESS["Suppress. Do not announce<br/>an unchanged condition again."]
+  SEEN -- "no" --> RECORD["recordNotification<br/>Convex mutation, keyed by stateKey"]
   RECORD --> DELIVER["Deliver once"]
 
+  RULE1["pipeline-empty"] -.-> RULES
+  RULE2["answer-rate-low"] -.-> RULES
+  RULE3["do-not-contact-spike"] -.-> RULES
+  RULE4["counts-truncated"] -.-> RULES
+
+  NOTE["A change in the firing set changes the key, so a transition is<br/>deliverable and a steady state is not. Without the key an<br/>unchanged condition is re-announced on every poll."]:::note
+  KEY -.-> NOTE
+
+  classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
   classDef pure fill:#0f1f2a,stroke:#5ee7ff,color:#f5f7ff
-  class BUILD,RULES pure
+  class BUILD,SLICES,RATES,RULES pure
 ```
 

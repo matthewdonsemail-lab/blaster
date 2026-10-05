@@ -5,6 +5,91 @@ sends SMS through the messaging profile registered for the recipient's country.
 
 ## Shape
 
+<!-- embedded: system-overview.mmd -->
+The whole system in one picture. Every rule below this diagram lives in `packages/core`, and every surface is a caller of it.
+
+```mermaid
+flowchart TB
+  subgraph clients["Clients"]
+    CLI["blaster CLI<br/>packages/blaster-cli"]
+    MCP["blaster-mcp<br/>stdio, and Streamable HTTP at /mcp"]
+    WEBAPP["blaster web<br/>apps/web, Vite SPA"]
+    CALLER["HTTP callers"]
+  end
+
+  subgraph api["Request surface - apps/api, Hono"]
+    HONO["Hono worker<br/>railcode.json names it as the server"]
+    OAUTH["requireOperator<br/>Twenty OAuth introspection"]
+  end
+
+  subgraph core["Domain library - packages/core, the only place a rule lives"]
+    CLIENT["twenty/client<br/>REST client, envelope unwrapping,<br/>keyset pagination"]
+    MSG["telnyx/messaging<br/>profile resolution, Telnyx client"]
+    BRK["pipeline/breakdown<br/>pure builder, notification rules"]
+    COMPLY["pipeline/sequence/compliance<br/>checkSenderReadiness, checkStateMatch"]
+    POOL["pipeline/pool<br/>pure selection and cursor math"]
+    ENV["platform/env<br/>manifest reader"]
+  end
+
+  subgraph convex["Convex backend - Convex Cloud"]
+    SCHEMA["schema.ts composes 7 domain files<br/>15 tables, see data-model.mmd"]
+    HTTP["convex/http/<br/>operator routes mirrored, so a site<br/>with no Hono still answers"]
+    SEQACT["convex/sequence/actions.ts<br/>runDueEnrollments, runEnrollmentStep,<br/>enrollRecipients"]
+    CRON["convex/crons.ts<br/>sequence runner, 15s, limit 25"]
+    RL["convex/rateLimit.ts<br/>account, per-number, campaign buckets.<br/>A brand bucket is defined but<br/>the runner never claims it."]
+    PHONES["convex/phoneNumbers/<br/>ledger, compliance snapshot"]
+    AGENT["@convex-dev/agent<br/>conversation threads and history"]
+    LIMITER["@convex-dev/rate-limiter<br/>mounted component"]
+  end
+
+  subgraph external["External providers"]
+    TWENTY[("Twenty CRM<br/>REST /rest/object<br/>GraphQL /graphql")]
+    TELNYX["Telnyx API<br/>/v2/messages<br/>/v2/messaging_profiles"]
+  end
+
+  MANIFEST[("config/env-vars.json<br/>the environment contract")]
+  SECRET[(".env.local<br/>gitignored, values only")]
+
+  CLI --> core
+  MCP --> core
+  WEBAPP --> HONO
+  CALLER --> HONO
+  HONO --> OAUTH
+  HONO --> core
+  HONO -. "writes" .-> convex
+
+  CLIENT --> TWENTY
+  MSG --> TELNYX
+  BRK --> CLIENT
+  ENV --> MANIFEST
+  COMPLY --> PHONES
+
+  SEQACT --> core
+  SEQACT --> PHONES
+  SEQACT --> AGENT
+  CRON --> SEQACT
+  SEQACT --> RL
+  RL --> LIMITER
+  HTTP --> SCHEMA
+  HTTP --> SEQACT
+
+  MANIFEST -. "read by" .-> core
+  MANIFEST -. "read by" .-> convex
+  SECRET -. "values for" .-> MANIFEST
+
+  NOTE["The runner is only alive because crons.ts schedules it.<br/>Without that one line, runDueEnrollments exists,<br/>is correct, and is read by nobody."]:::note
+  CRON -.-> NOTE
+
+  classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
+  classDef store fill:#1b1030,stroke:#7c5cff,color:#f5f7ff
+  classDef ext fill:#0b1020,stroke:#5ee7ff,color:#f5f7ff
+  classDef sched fill:#2a1f0f,stroke:#fbbf24,color:#f5f7ff
+  class TWENTY,TELNYX ext
+  class MANIFEST,SECRET store
+  class CRON sched
+```
+
+
 Two runtimes, one contract.
 
 ```
@@ -89,6 +174,57 @@ helper file, so the internal shape can change without touching call sites. See
 [docs/naming-conventions.md](naming-conventions.md).
 
 ## The data flow
+
+<!-- embedded: send-message-sequence.mmd -->
+One message, end to end, including the branch where the outcome is honestly unknown.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Caller
+  participant Surface as CLI / MCP / HTTP
+  participant Core as telnyx/messaging
+  participant Num as libphonenumber-js
+  participant Tel as Telnyx API
+  participant Hook as Webhook receiver
+  participant Cvx as Convex
+
+  Caller->>Surface: send to +353871234567
+  Surface->>Core: resolveMessagingProfile
+  Core->>Num: parse the number
+  Num-->>Core: IE
+  Core->>Core: country registered?
+  alt IE has a registered profile
+    Core-->>Surface: alpha sender profile, recipient-country
+  else IE is unregistered
+    Core-->>Surface: default profile, fallback, with a warning
+  end
+
+  Surface->>Tel: POST /v2/messages with messaging_profile_id
+  Tel-->>Surface: accepted, id and status
+
+  Tel->>Hook: message.finalized
+  alt TELNYX_PUBLIC_KEY is configured
+    Hook->>Hook: verify the signature
+    Hook-->>Tel: 200, verified
+  else no public key
+    Hook->>Hook: check the shared token
+    Hook-->>Tel: 200, verification reported as shared-token
+  end
+
+  Hook->>Cvx: record the outcome
+  Note over Hook,Tel: An unverifiable event is rejected rather<br/>than processed, so an unsigned request cannot<br/>move state.
+
+  Tel->>Hook: message.received
+  Hook->>Hook: verify, then resolve the owned destination
+  Hook->>Cvx: recordInboundMessage
+  Cvx->>Cvx: store the message + stop the peer's<br/>enrollments in one transaction
+  Cvx-->>Hook: stored, stoppedEnrollments
+  Hook->>Hook: notify the owning members<br/>(fire and forget, never fails the 200)
+  Hook-->>Tel: 200, stored
+  Note over Hook,Cvx: A redelivery returns early on providerEventId,<br/>so it can neither stop twice nor notify twice.
+```
+
 
 1. `GET /api/breakdown` reads `agencyLeads` and `agencyCalls` from Twenty.
 2. `buildBreakdown` counts them into slices. It is pure, so it is tested with

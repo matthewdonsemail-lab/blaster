@@ -1,6 +1,7 @@
 %% Messaging profile selection. The ordering is the whole point: a profile bound
 %% to the sending number outranks the country rule, the country rule outranks the
 %% default, and an unregistered country is reported rather than silently absorbed.
+%% fact: profile-reasons bound-to-number,recipient-country,default-fallback,no-profile-configured
 flowchart TD
   START["Send one SMS"] --> BOUND{"Sending number declares<br/>a profile?"}
   BOUND -- "yes, operator set it" --> BOUNDWIN["Use the bound profile<br/>reason: bound-to-number"]

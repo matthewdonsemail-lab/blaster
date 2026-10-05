@@ -79,6 +79,49 @@ describe("listSendingNumbers", () => {
   });
 });
 
+describe("getSequence", () => {
+  test("returns the steps with the row, not a four-field summary", async () => {
+    const seen: { current: Seen | null } = { current: null };
+    const client = createBlasterApiClient({
+      baseUrl: "https://blaster.example",
+      accessToken: "at-operator",
+      fetchFn: stubFetch((s) => {
+        seen.current = s;
+        return json({
+          _id: "jx1",
+          name: "abel-live-3step",
+          status: "active",
+          poolId: null,
+          fromNumber: "+12724470148",
+          stepCount: 3,
+          options: { stopOnReply: true },
+          steps: [
+            { text: "one", delayHours: 0, isStop: false },
+            { text: "two", delayHours: 0.00833, isStop: false },
+            { text: "three", delayHours: 0.00833, isStop: false },
+          ],
+        });
+      }),
+    });
+    const sequence = await client.getSequence("jx1");
+    expect(seen.current?.url).toBe("https://blaster.example/api/sequences/jx1");
+    expect(sequence?.fromNumber).toBe("+12724470148");
+    expect(sequence?.steps).toHaveLength(3);
+    expect(sequence?.steps[2]?.text).toBe("three");
+  });
+
+  test("an unknown sequence raises rather than looking like an empty one", async () => {
+    const client = createBlasterApiClient({
+      baseUrl: "https://blaster.example",
+      accessToken: "at-operator",
+      fetchFn: stubFetch(() => json({ error: "Unknown sequence" }, 404)),
+    });
+    // The caller must be able to tell "no such sequence" from "a sequence with
+    // no steps", so this is an error rather than a null-shaped empty result.
+    await expect(client.getSequence("missing")).rejects.toBeInstanceOf(BlasterApiError);
+  });
+});
+
 describe("prospect selection contract", () => {
   const clientFor = (handler: (seen: Seen) => Response) =>
     createBlasterApiClient({

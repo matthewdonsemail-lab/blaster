@@ -300,6 +300,25 @@ export interface SequenceOption {
   poolId: string | null;
 }
 
+/**
+ * One sequence with its steps, as `/api/sequences/:id` returns it.
+ *
+ * `steps` is load-bearing: `blaster sequence show` and `blaster sequence run`
+ * describe the messages from this. A response without them left those commands
+ * printing placeholder content instead of the truth.
+ */
+export interface SequenceDetail {
+  _id: string;
+  name: string;
+  status: string;
+  poolId: string | null;
+  /** Sending number in E.164. */
+  fromNumber: string;
+  stepCount: number;
+  options: Record<string, unknown>;
+  steps: Array<{ text: string; delayHours: number; isStop: boolean }>;
+}
+
 export interface RegisterSequenceInput {
   name: string;
   fromNumber: string;

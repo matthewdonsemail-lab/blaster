@@ -31,6 +31,65 @@ common path honest and repeatable:
 
 ## The two routes
 
+<!-- embedded: prospect-batch-send.mmd -->
+A batch, in one picture. Filters are definitions; eligibility is decided before anything is sent; every recipient gets an outcome.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor Op as Operator (CLI / MCP)
+  participant Gate as requireOperator
+  participant Route as POST /messages/batch-send
+  participant Menu as prospect filter menu
+  participant Twelve as Twenty agencyProspects
+  participant Num as agencyPhones
+  participant Core as telnyx/messaging
+  participant Tel as Telnyx API
+
+  Op->>Route: agencyPhoneId, filters, text, idempotencyKey
+  Route->>Gate: bearer token
+  Gate-->>Route: live operator (else 401)
+  Route->>Menu: validateProspectFilters(filters)
+  alt every clause is on the menu
+    Menu-->>Route: validated clauses, as one DSL expression
+  else a clause is not filterable
+    Menu-->>Op: 400, every problem named at once
+  end
+
+  Route->>Num: findAgencyPhoneRow(agencyPhoneId)
+  alt the id resolves and the number has a profile
+    Num-->>Route: phoneNumber + messagingProfileId
+  else unknown id, or no profile on the record
+    Num-->>Op: 404 / 409, nothing is sent
+  end
+
+  Route->>Twelve: walkProspectRows(DSL)
+  Twelve-->>Route: every matching row
+  Note over Route: more than MAX_BATCH_PROSPECTS (500)<br/>is refused at the gate, 400
+
+  Route->>Route: splitEligibility(rows)
+  Note over Route: no E.164 phone, or a terminal<br/>outbound stage, is a skip with a reason
+
+  loop each eligible prospect
+    Route->>Core: resolveMessagingProfile(recipient)
+    Core-->>Route: bound profile, or a reason
+    Route->>Twelve: outboundState -> SENDING
+    Route->>Tel: POST /v2/messages
+    alt Telnyx accepts
+      Tel-->>Route: id + status
+      Route->>Twelve: outboundState -> AWAITING_DELIVERY
+      Note over Route: a send that lands but whose<br/>stage could not be updated is<br/>still "sent", with a warning
+    else the provider refuses
+      Tel-->>Route: error
+      Route->>Twelve: outboundState -> FAILED
+    end
+  end
+
+  Route-->>Op: { sent, skipped, failed, outcomes[] }
+  Note over Route,Op: outcomes is per-recipient,<br/>so a retry is safe to assess
+```
+
+
 Both sit on the gated `inbox` Hono app (mounted at `/api`), so they require a
 live operator token, and both read `agencyProspects` through the shared
 `twenty/agencyProspect` helpers.

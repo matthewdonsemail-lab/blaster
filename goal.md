@@ -1,63 +1,75 @@
 # Goal
 
 <!-- goal
-updated: 2026-10-04T04:51:53Z
-commit: feat: transition to Convex-only sequence draft and resume lifecycle with atomic pool creation
+updated: 2026-10-04T08:58:29Z
+commit: test: cover the read failures the send-path tables only described
 -->
 
-The running scope for the number-pool objective. `scripts/check-goal.mjs` refuses
-a push unless this file is a current outline — updated within 20 minutes, naming
-the commit message, the files changed, and the task list. Refresh it with
+The running scope for the documentation objective: the diagrams, README, and prose
+docs must describe how Blaster actually works, and must be kept honest by a
+gate rather than by discipline. `scripts/check-goal.mjs` refuses a push unless
+this file is a current outline - updated within 20 minutes, naming the commit
+message, the files changed, and the task list. Refresh it with
 `node scripts/check-goal.mjs --stamp` right before pushing.
 
 ## Objective
 
-A number pool is the outbound sending unit: a sequence works a pool in order,
-inside each number's rate budget and the deployment's send rate limiter, and the
-inbox, the API, the MCP server, and the CLI all reflect what the pool actually
-did. The work is complete when a prospect texted from a pool number has a thread
-that resolves to its campaign, replies stop the sequence, and no send can outrun
-the per-number or account ceiling.
+As more prompts, CLI commands, API routes, and MCP tools are added, the written
+description of the system is the only thing telling a new reader which
+credential a given route needs and what a diagram is asserting. It has to be
+complete, and it has to fail loudly when it goes stale. The work is complete
+when every entry surface is drawn, the enrollment and runner state machines are
+transcribed from the code rather than summarised, `docs/diagrams/README.md`
+points a new reader at the three diagrams that explain the system, and
+`pnpm check:diagrams` parses every diagram and asserts the facts they claim -
+so a diagram cannot quietly contradict the code.
 
 ## Files changed
 
-- .agents/skills/domain-modeling/SKILL.md
-- GLOSSARY.md
-- apps/api/src/index.ts
-- apps/api/src/lib/convex/helpers/client.ts
-- apps/api/src/lib/convex/index.ts
-- convex/_generated/api.d.ts
-- convex/http/sequence.ts
-- convex/pool/mutations.ts
-- convex/pool/types.ts
-- convex/schema/sequences.ts
-- convex/sequence/drafts.ts
-- convex/sequence/mutations.ts
-- docs/convex-naming-conventions.md
-- docs/naming-conventions.md
+- README.md
+- docs/architecture.md
+- docs/call-history.md
+- docs/error-codes.md
+- docs/diagrams/README.md
+- docs/diagrams/data-model.mmd
+- docs/diagrams/deployment-and-gates.mmd
+- docs/diagrams/entrypoints-and-transports.mmd
+- docs/diagrams/enrollment-state-machine.mmd
+- docs/diagrams/guidance-and-ai-prompts.mmd
+- docs/diagrams/sequence-builder.mmd
+- docs/diagrams/sequence-runner-tick.mmd
+- docs/diagrams/surfaces-and-core.mmd
+- docs/diagrams/system-overview.mmd
+- docs/identity.md
+- docs/send.md
+- docs/sequencer.md
 - goal.md
-- lefthook.yml
 - package.json
-- packages/blaster-cli/src/cli/index.ts
-- packages/blaster-cli/src/cli/pools.ts
-- packages/blaster-cli/src/cli/sequence-store.ts
-- packages/blaster-cli/src/cli/sequence.ts
-- packages/blaster-cli/test/sequence-drafts.test.ts
-- packages/blaster-cli/test/sequence-menu.test.ts
-- packages/blaster-mcp/src/mcp/index.ts
-- packages/core/src/blaster/api/helpers/client.ts
-- packages/core/src/blaster/api/types.ts
-- packages/core/src/blaster/capabilities/helpers/index.ts
-- packages/core/src/blaster/capabilities/helpers/registry.ts
-- packages/core/src/blaster/capabilities/index.ts
-- packages/core/src/blaster/capabilities/types.ts
-- packages/core/src/index.ts
-- packages/core/src/pipeline/sequence/helpers/builder.ts
-- packages/core/test/capabilities.test.ts
-- plugins/blaster/skills/sequences/SKILL.md
-- scripts/check-surfaces.mjs
+- packages/blaster-cli/test/sequence-read-failures.test.ts
+- plugins/blaster/.claude-plugin/plugin.json
+- pnpm-lock.yaml
+- scripts/check-diagrams.mjs
 
 ## Task
+
+- [x] `entrypoints-and-transports.mmd`: all four caller-facing surfaces, both MCP transports, the Hono and Convex HTTP routers as non-interchangeable, and the routes that deliberately skip `requireOperator`
+- [x] `enrollment-state-machine.mmd`: the statechart transcribed from `machine.ts`, with the states only an operator can leave marked
+- [x] `sequence-runner-tick.mmd`: the cron tick, the due queue, every skip and defer reason, and why capacity is claimed before the step
+- [x] `guidance-and-ai-prompts.mmd`: the deterministic reply templates, the single LLM call, and why `@clack/prompts` is neither
+- [x] Existing diagrams corrected against the code: `system-overview`, `surfaces-and-core`, `data-model` (all 15 tables), `sequence-builder`, `deployment-and-gates`
+- [x] `docs/diagrams/README.md` leads with the three diagrams to read first and states the rendering trap
+- [x] Embedded diagrams in `README.md` and in `docs/architecture.md`, `docs/send.md`, `docs/sequencer.md`, `docs/identity.md`, `docs/call-history.md` from the same source as the `.mmd` files
+- [x] `scripts/check-diagrams.mjs`: parses every `.mmd` and every embedded `mermaid` fence with Mermaid's own parser, and asserts the facts the diagrams claim about the code
+- [x] Self-test for the checker (unparseable diagram rejected, contradicted fact rejected, fenced-block extraction), wired into `pnpm check` as gates 14 and 15
+- [x] `mermaid` and `jsdom` added as devDependencies via pnpm; lockfile updated
+- [x] Full `pnpm check` green with the new gates in the chain
+- [x] Audit fixes A-F against `machine.ts`, `actions.ts` and `compliance.ts`: runner-tick redrawn in the real guard order with the account, API-key, `no-number` and `consumeSender` gates, no brand bucket in the capacity claim, generic same-state wording, guidance CLASSIFY is `classifyConversation`, `crons.ts` comment says 15 seconds
+- [x] Gate is real: `%%` annotation reader fixed, `run()` owns its violations, the self-test drives `run()` for a wrong fact, a right fact, an unknown fact name and a contradicted drawing, ordering facts anchor on call sites with comments stripped
+- [x] `%% edge-chain:` so the gate checks the arrows a diagram draws, not only the prose in its annotation
+- [x] `docs/error-codes.md`: every send-path and read-path failure with where it is raised, whether it retries, what the operator sees, and which test covers it
+- [x] `sequence-read-failures.test.ts`: `showDraft`/`runDraft` on 404, 502 and 503, and `newDraft` end to end for explicit `--steps`
+
+## Backlog carried forward from the pool objective
 
 - [x] `convex/pool/` domain: the `poolNumbers` relation, per-number rate state, internal `consumeSender`, cursor remap
 - [x] `packages/core/src/pipeline/pool/`: pure selection and cursor math, unit-tested
@@ -98,3 +110,5 @@ the per-number or account ceiling.
 - [ ] README reflects only live, relay-contracted CLI and MCP tools; `check:surfaces` enforces it as a pre-push gate
 - [ ] Authored docs aligned to current state: docs/sequencer.md delivery step, docs/architecture.md gates table, docs/README.md authored index, docs/deployment.md rewritten for Railcode
 - [ ] Dual-host plugin tree: `plugins/blaster/` carries both Claude Code (`.claude-plugin/` + `.mcp.json`) and Codex (root `plugin.json` + `mcp.json` + `.agents/plugins/marketplace.json`) from one source; five skills drawn from the as-built docs; vendor pages committed under `docs/plugins/`
+- [x] Everything HTTP can do, MCP can do: six reads/sends and two lookups added as tools (`blaster_list_sequences`, `blaster_get_sequence`, prospect fields/search/preview/send, sending numbers, messaging profiles); `capability-parity.test.ts` fails if an HTTP capability has no MCP tool
+- [x] Registry, CLI capabilities table, MCP tools and HTTP routes are checked against each other by `packages/blaster-cli/test/capability-parity.test.ts`; the table row for `sequences.drafts.get` no longer claims `sequence show`

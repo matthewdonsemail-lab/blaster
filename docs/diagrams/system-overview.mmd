@@ -1,30 +1,45 @@
-%% Blaster system overview: three request surfaces over one domain library, a
-%% Convex backend holding the mounted components, and two external providers.
+%% Blaster system overview, checked against the tree on 2026-10-04.
+%% ---
+%% What changed from the previous version and why: it named
+%% `convex/blaster.ts` (that file does not exist) and three mounted
+%% components that were removed from `convex/convex.config.ts` because the
+%% packages are private and were never installed. The two components actually
+%% mounted are `@convex-dev/agent` and `@convex-dev/rate-limiter`. It also
+%% omitted the Convex HTTP router, the scheduled runner, and the web app.
+%% fact: schema-tables 15
+%% fact: schema-modules 7
+%% fact: mounted-components 2
 flowchart TB
   subgraph clients["Clients"]
     CLI["blaster CLI<br/>packages/blaster-cli"]
-    MCP["blaster-mcp<br/>Model Context Protocol over stdio"]
-    WEB["HTTP callers"]
+    MCP["blaster-mcp<br/>stdio, and Streamable HTTP at /mcp"]
+    WEBAPP["blaster web<br/>apps/web, Vite SPA"]
+    CALLER["HTTP callers"]
   end
 
-  subgraph api["Request surface"]
-    HONO["Hono worker<br/>apps/api<br/>Railcode app on railcode.dev"]
+  subgraph api["Request surface - apps/api, Hono"]
+    HONO["Hono worker<br/>railcode.json names it as the server"]
+    OAUTH["requireOperator<br/>Twenty OAuth introspection"]
   end
 
-  subgraph core["Domain library - the only place a rule lives"]
+  subgraph core["Domain library - packages/core, the only place a rule lives"]
     CLIENT["twenty/client<br/>REST client, envelope unwrapping,<br/>keyset pagination"]
     MSG["telnyx/messaging<br/>profile resolution, Telnyx client"]
     BRK["pipeline/breakdown<br/>pure builder, notification rules"]
+    COMPLY["pipeline/sequence/compliance<br/>checkSenderReadiness, checkStateMatch"]
+    POOL["pipeline/pool<br/>pure selection and cursor math"]
     ENV["platform/env<br/>manifest reader"]
   end
 
   subgraph convex["Convex backend - Convex Cloud"]
-    SCHEMA["schema.ts<br/>messagingProfiles, notifications,<br/>discoveryRuns"]
-    HTTP["http.ts<br/>read-only routes"]
-    FN["blaster.ts<br/>queries and mutations"]
-    TREG["treg component<br/>discovery with a cost ceiling"]
-    TEL["telnyx component<br/>signature verification"]
-    AMAIL["agentmail component"]
+    SCHEMA["schema.ts composes 7 domain files<br/>15 tables, see data-model.mmd"]
+    HTTP["convex/http/<br/>operator routes mirrored, so a site<br/>with no Hono still answers"]
+    SEQACT["convex/sequence/actions.ts<br/>runDueEnrollments, runEnrollmentStep,<br/>enrollRecipients"]
+    CRON["convex/crons.ts<br/>sequence runner, 15s, limit 25"]
+    RL["convex/rateLimit.ts<br/>account, per-number, campaign buckets.<br/>A brand bucket is defined but<br/>the runner never claims it."]
+    PHONES["convex/phoneNumbers/<br/>ledger, compliance snapshot"]
+    AGENT["@convex-dev/agent<br/>conversation threads and history"]
+    LIMITER["@convex-dev/rate-limiter<br/>mounted component"]
   end
 
   subgraph external["External providers"]
@@ -33,32 +48,42 @@ flowchart TB
   end
 
   MANIFEST[("config/env-vars.json<br/>the environment contract")]
+  SECRET[(".env.local<br/>gitignored, values only")]
 
   CLI --> core
   MCP --> core
-  WEB --> HONO
+  WEBAPP --> HONO
+  CALLER --> HONO
+  HONO --> OAUTH
   HONO --> core
-  HONO -. "writes" .-> FN
+  HONO -. "writes" .-> convex
 
   CLIENT --> TWENTY
   MSG --> TELNYX
   BRK --> CLIENT
   ENV --> MANIFEST
+  COMPLY --> PHONES
 
-  CONVEXCFG["convex.config.ts"] --> TREG
-  CONVEXCFG --> TEL
-  CONVEXCFG --> AMAIL
-  SCHEMA --- FN
-  HTTP --- SCHEMA
-  TREG --> FN
-  TEL --> FN
+  SEQACT --> core
+  SEQACT --> PHONES
+  SEQACT --> AGENT
+  CRON --> SEQACT
+  SEQACT --> RL
+  RL --> LIMITER
+  HTTP --> SCHEMA
+  HTTP --> SEQACT
 
   MANIFEST -. "read by" .-> core
   MANIFEST -. "read by" .-> convex
+  SECRET -. "values for" .-> MANIFEST
 
+  NOTE["The runner is only alive because crons.ts schedules it.<br/>Without that one line, runDueEnrollments exists,<br/>is correct, and is read by nobody."]:::note
+  CRON -.-> NOTE
+
+  classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
   classDef store fill:#1b1030,stroke:#7c5cff,color:#f5f7ff
   classDef ext fill:#0b1020,stroke:#5ee7ff,color:#f5f7ff
-  classDef surf fill:#131a33,stroke:#8ea3d6,color:#f5f7ff
+  classDef sched fill:#2a1f0f,stroke:#fbbf24,color:#f5f7ff
   class TWENTY,TELNYX ext
-  class MANIFEST store
-  class CLI,MCP,WEB,HONO,CLIENT,MSG,BRK,ENV surf
+  class MANIFEST,SECRET store
+  class CRON sched

@@ -168,6 +168,37 @@ export function planForRecipient(
   };
 }
 
+/**
+ * The draft a sequence actually holds, or `null` when the read came back empty.
+ *
+ * Exported for the tests that pin the behaviour. There is deliberately no
+ * placeholder here: `show` and `run` used to substitute `+10000000000` and one
+ * fake step, which printed a plausible sequence that had never been written.
+ */
+export function draftFromSequence(
+  target: { name: string; poolId: string | null },
+  seq: unknown,
+): SequenceDraft | null {
+  const row = seq as { fromNumber?: string; options?: Record<string, unknown>; steps?: unknown[] } | null;
+  if (!row || typeof row.fromNumber !== "string" || !Array.isArray(row.steps) || row.steps.length === 0) {
+    return null;
+  }
+  return {
+    name: target.name,
+    fromNumber: row.fromNumber,
+    poolId: target.poolId ?? undefined,
+    options: { ...DEFAULT_OPTIONS, ...row.options },
+    steps: row.steps.map((step) => {
+      const s = step as { text?: string; delayHours?: number; isStop?: boolean };
+      return {
+        text: s.text ?? "",
+        delayHours: s.delayHours ?? 0,
+        isStop: s.isStop === true,
+      };
+    }),
+  };
+}
+
 export function planFor(
   draft: SequenceDraft,
   recipients: Recipient[],
@@ -276,7 +307,7 @@ async function chooseFromNumber(ctx: SequenceContext): Promise<string | number> 
   return picked ?? abort("Nothing was recorded,");
 }
 
-async function newDraft(ctx: SequenceContext): Promise<number> {
+export async function newDraft(ctx: SequenceContext): Promise<number> {
   const interactive = isInteractive(ctx.json);
   if (interactive) begin("New sequence");
 
@@ -389,13 +420,22 @@ async function newDraft(ctx: SequenceContext): Promise<number> {
   }
 
   // 3. Sequence steps
+  //
+  // An explicit `--steps` wins over whatever a resumed draft carried. The
+  // `steps.length === 0` guard that used to sit here meant that resuming a draft
+  // in Convex silently discarded the steps the operator had just typed, and the
+  // sequence was created from the draft's stale content instead.
   const stepsFlag = ctx.flags.get("steps");
-  if (typeof stepsFlag === "string" && stepsFlag && steps.length === 0) {
+  if (typeof stepsFlag === "string" && stepsFlag) {
     const parsedSteps = parseStepsFlag(stepsFlag);
     if ("error" in parsedSteps) {
       console.error(`blaster sequence new: ${parsedSteps.error}`);
       return 1;
     }
+    if (steps.length > 0) {
+      note("Steps", `Using the ${parsedSteps.steps.length} step(s) from --steps, not the ${steps.length} resumed from the draft.`);
+    }
+    steps.length = 0;
     steps.push(...parsedSteps.steps);
   }
   if (interactive && steps.length === 0) {
@@ -555,7 +595,7 @@ async function listDrafts(ctx: SequenceContext): Promise<number> {
   return 0;
 }
 
-async function showDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
+export async function showDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
   if (!nameOrId) {
     console.error("blaster sequence show: name the sequence");
     return 1;
@@ -570,14 +610,25 @@ async function showDraft(ctx: SequenceContext, nameOrId: string | undefined): Pr
     return 1;
   }
 
-  const seq = await live.client.getSequence(target.id);
-  const draft: SequenceDraft = {
-    name: target.name,
-    fromNumber: (seq as any)?.fromNumber ?? "+10000000000",
-    poolId: target.poolId ?? undefined,
-    options: { ...DEFAULT_OPTIONS, ...(seq as any)?.options },
-    steps: (seq as any)?.steps ?? [{ text: "Step 1", delayHours: 0, isStop: false }],
-  };
+  // The client throws `BlasterApiError` on any non-2xx, so a 404, 502 or 503
+  // never reaches the `!draft` branch below. Without this catch a failed read
+  // escaped as an unhandled rejection and the operator saw a stack trace.
+  let seq: Awaited<ReturnType<typeof live.client.getSequence>>;
+  try {
+    seq = await live.client.getSequence(target.id);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`blaster sequence show: could not read the steps of "${target.name}": ${detail}`);
+    return 1;
+  }
+  const draft = draftFromSequence(target, seq);
+  if (!draft) {
+    // Fabricating `+10000000000` and a single "Step 1" here made a sequence
+    // look like something the operator had written when the read had failed.
+    // Say so instead.
+    console.error(`blaster sequence show: could not read the steps of "${target.name}".`);
+    return 1;
+  }
   const summary = summarise(draft);
   const rows = planFor(draft, readRecipients(ctx.flags), ctx.now(), ctx.evaluate);
 
@@ -594,7 +645,7 @@ async function showDraft(ctx: SequenceContext, nameOrId: string | undefined): Pr
   return printPlan(rows);
 }
 
-async function runDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
+export async function runDraft(ctx: SequenceContext, nameOrId: string | undefined): Promise<number> {
   if (!nameOrId) {
     console.error("blaster sequence run: name the sequence");
     return 1;
@@ -609,14 +660,19 @@ async function runDraft(ctx: SequenceContext, nameOrId: string | undefined): Pro
     return 1;
   }
 
-  const seq = await live.client.getSequence(target.id);
-  const draft: SequenceDraft = {
-    name: target.name,
-    fromNumber: (seq as any)?.fromNumber ?? "+10000000000",
-    poolId: target.poolId ?? undefined,
-    options: { ...DEFAULT_OPTIONS, ...(seq as any)?.options },
-    steps: (seq as any)?.steps ?? [{ text: "Step 1", delayHours: 0, isStop: false }],
-  };
+  let seq: Awaited<ReturnType<typeof live.client.getSequence>>;
+  try {
+    seq = await live.client.getSequence(target.id);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    console.error(`blaster sequence run: could not read the steps of "${target.name}": ${detail}`);
+    return 1;
+  }
+  const draft = draftFromSequence(target, seq);
+  if (!draft) {
+    console.error(`blaster sequence run: could not read the steps of "${target.name}".`);
+    return 1;
+  }
   const now = ctx.now();
   const recipients = readRecipients(ctx.flags);
   const rows = planFor(draft, recipients, now, ctx.evaluate);

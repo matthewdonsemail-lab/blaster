@@ -1,0 +1,68 @@
+%% The two different things in this repo that both get called "prompts".
+%% ---
+%% Added 2026-10-04. There was no diagram for either, and they are easy to
+%% confuse because only one of them is an LLM prompt.
+%% ---
+%%   1. `packages/core/src/guidance/prompts/` - eight REPLY templates, chosen
+%%      deterministically. No model is involved. This is the interesting one:
+%%      it is the part a compliance reviewer reads, so it is versioned content
+%%      in the repo rather than a string in a prompt, and an opt-out has its
+%%      own template that outranks the rest.
+%% ---
+%%   2. `packages/core/src/ai/analysis/` - the one real LLM call, grading a call
+%%      transcript. Truncated at MAX_TRANSCRIPT_CHARS before it goes out.
+%% ---
+%% `@clack/prompts` in the CLI wizard is a third thing again and has nothing to
+%% do with either: it is terminal UI.
+%% fact: guidance-seeds 8
+flowchart TB
+  subgraph inbound["An inbound reply arrives"]
+    HOOK["POST /api/webhooks/telnyx"]
+    THREAD["conversation thread,<br/>@convex-dev/agent"]
+    CLASSIFY["classifyConversation<br/>conversation/classification/classify.ts.<br/>Inbound classification only.<br/>Outbound sends are classified by<br/>classifySendResult in telnyx/messaging -<br/>a different function, not this one."]
+    STOP{"Is it an opt-out?"}
+  end
+
+  HOOK --> THREAD --> CLASSIFY --> STOP
+
+  subgraph guidance["1. Reply guidance - deterministic, no model"]
+    SELECT["selectGuidance<br/>picks by intent and state"]
+    SEED[("GUIDANCE_SEED<br/>8 templates, all version 1<br/>versioned in the repo")]
+    OUT["A template, rendered.<br/>The send is a plain<br/>outbound SMS after that."]
+    SUPPRESS[("suppressions row<br/>written before any reply<br/>is composed")]
+  end
+
+  STOP -- "yes" --> SUPPRESS
+  SUPPRESS --> OOPT["suppress.optout.v1<br/>acknowledges and stops.<br/>Nothing else is offered."]
+  STOP -- "no" --> SELECT
+  SELECT --> SEED
+  SEED --> OUT
+
+  subgraph llm["2. AI analysis - the one real model call"]
+    CALL["Call transcript<br/>from Twenty agencyCalls"]
+    TRUNC["Truncated to<br/>MAX_TRANSCRIPT_CHARS = 12,000"]
+    SYSP["SYSTEM_PROMPT<br/>the grading instructions"]
+    MODEL["gpt-4o-mini by default"]
+    GRADE["A grade, written back.<br/>Never gates a send."]
+  end
+  CALL --> TRUNC --> SYSP --> MODEL --> GRADE
+
+  NOTE1["These eight are content, not code. They change when a<br/>compliance reviewer changes them, which is why they are versioned<br/>in the repo instead of living in a deployment variable. Adding<br/>a ninth means adding a seed entry and bumping GUIDANCE_SEED_VERSION."]:::note
+  SEED -.-> NOTE1
+
+  NOTE2["Opt-out handling is additive over the enrollment status,<br/>never a replacement. The status stops one enrollment; the<br/>suppression stops the person everywhere; only a human resolve<br/>lifts the row, by deleting it."]:::note
+  SUPPRESS -.-> NOTE2
+
+  NOTE3["The transcript is truncated before the prompt is built, so<br/>a long call cannot silently push the real instructions<br/>out of the context window."]:::note
+  TRUNC -.-> NOTE3
+
+  NOTE4["Not a prompt: packages/blaster-cli/src/cli/prompt.ts uses<br/>@clack/prompts for the interactive wizard. Same word,<br/>unrelated thing."]:::note
+  SELECT -.-> NOTE4
+
+  classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
+  classDef store fill:#1b1030,stroke:#7c5cff,color:#f5f7ff
+  classDef llmc fill:#0f1f2a,stroke:#5ee7ff,color:#f5f7ff
+  classDef stopc fill:#2a0f0f,stroke:#f87171,color:#f5f7ff
+  class SEED,SUPPRESS store
+  class SYSP,MODEL llmc
+  class OOPT stopc

@@ -1,0 +1,131 @@
+%% Every way a caller reaches Blaster, and which credential each way needs.
+%% ---
+%% Added 2026-10-04. This is the diagram to read before adding a CLI command, an
+%% MCP tool, or an HTTP route, because it answers the three questions that
+%% actually cause mistakes: which surface owns the rule, which transport does
+%% this particular surface use, and does the caller pass through `requireOperator`
+%% or not.
+%% ---
+%% Three facts here are easy to get wrong and are the reason the diagram exists:
+%% ---
+%%   1. There are TWO HTTP surfaces, not one. `apps/api` is a Hono app on its own
+%%      port; `convex/http.ts` is Convex's own httpRouter on the deployment's
+%%      site. They overlap on purpose, and `check:surfaces` fails if a Convex
+%%      router route has no Hono twin. They are not interchangeable: only Hono
+%%      serves `/mcp`.
+%% ---
+%%   2. MCP has TWO transports. stdio for a local agent, Streamable HTTP
+%%      mounted inside the Hono app for a hosted one. The hosted one is not a
+%%      separate implementation: it wraps each request in `withApiClient`, so a
+%%      hosted tool call runs as the caller rather than as the server.
+%% ---
+%%   3. The auth gate is per-route, not per-app. Three families of `/api` route
+%%      are deliberately ungated, and drawing them as gated would be a lie that
+%%      costs someone an afternoon.
+%% fact: mcp-tools 50
+%% fact: registry-entries 54
+flowchart TB
+  subgraph callers["Callers"]
+    HUMAN["Operator, at a terminal"]
+    AGENT["Agent, local<br/>Claude Code, Codex"]
+    AGONLINE["Agent, hosted<br/>anything speaking MCP over HTTP"]
+    WEB["Browser<br/>apps/web, Vite SPA"]
+    WEBHOOK["Telnyx<br/>status and inbound webhooks"]
+    DIRECT["Direct Convex client<br/>a script with the deployment URL"]
+  end
+
+  subgraph surfaces["The four caller-facing surfaces"]
+
+    subgraph clisurf["1. CLI - packages/blaster-cli"]
+      CLIMAIN["index.ts main()<br/>hand-rolled parseArgs, no framework"]
+      CLICAP["CAPABILITIES table<br/>54 rows, mirrors the registry"]
+      CLIGRP["Groups: sequence, pool, phones,<br/>numbers, accounts, suppress,<br/>enrollments, inbox, conversation"]
+    end
+
+    subgraph mcpsurf["2. MCP - packages/blaster-mcp, 50 tools"]
+      MCPSTDIO["stdio transport<br/>startServer(), spawned by plugins/blaster"]
+      MCPHTTP["Streamable HTTP<br/>createHostedMcpHandler()<br/>mounted at ALL /mcp"]
+      MCPHAND["tools/list and tools/call<br/>TOOL_DEFINITIONS is the source"]
+    end
+
+    subgraph honosurf["3. Hono - apps/api, the primary HTTP surface"]
+      HONOAPP["Hono app on port 4180<br/>60+ routes, five mounted sub-apps"]
+      HONOGATE["requireOperator<br/>Twenty OAuth introspection"]
+      HONOOPEN["Ungated by design:<br/>GET /api/env,<br/>/api/auth/*,<br/>POST /api/webhooks/telnyx"]
+    end
+
+    subgraph cvxsurf["4. Convex httpRouter - convex/http.ts"]
+      CVXHTTP["On the deployment's own site<br/>five registrars: blaster,<br/>conversations, pool, sequence,<br/>suppressions"]
+      CVXFN["Convex functions<br/>public api.* and internal.*"]
+    end
+  end
+
+  subgraph core["Domain library - packages/core, the only place a rule lives"]
+    REGISTRY[("capability registry<br/>54 entries")]
+    CLIENT["BlasterApiClient<br/>~40 methods,<br/>errors normalised"]
+    CORELIB["twenty, telnyx, pipeline,<br/>guidance, platform"]
+  end
+
+  subgraph auth["Credentials, and what each one opens"]
+    SESSION["Session file<br/>access + refresh token"]
+    OAUTHTOK["Bearer token<br/>checked against Twenty"]
+    TELNYXKEY["TELNYX_API_KEY"]
+    CVXKEY["Deployment URL<br/>no admin key in the browser"]
+  end
+
+  HUMAN --> CLIMAIN
+  AGENT --> MCPSTDIO
+  AGONLINE --> MCPHTTP
+
+  CLIMAIN --> CLICAP
+  CLIMAIN --> CLIGRP
+  CLIGRP --> CLIENT
+  CLIMAIN --> SESSION
+
+  MCPSTDIO --> MCPHAND
+  MCPHTTP --> MCPHAND
+  MCPHAND -. "stateful operator work calls<br/>back into Hono as the caller" .-> HONOAPP
+  MCPHAND --> CORELIB
+  MCPSTDIO --> SESSION
+
+  WEB --> HONOAPP
+  WEBHOOK --> HONOAPP
+
+  HONOAPP --> HONOGATE
+  HONOGATE --> OAUTHTOK
+  HONOAPP --> HONOOPEN
+  HONOOPEN -. "the webhook cannot carry a<br/>bearer token, so it is not gated" .-> WEBHOOK
+
+  DIRECT --> CVXHTTP
+  DIRECT --> CVXFN
+  CVXHTTP --> CVXKEY
+
+  CLICAP -. "declared here" .-> REGISTRY
+  MCPHAND -. "declared here" .-> REGISTRY
+  HONOAPP -. "declared here" .-> REGISTRY
+  REGISTRY --> CLIENT
+  CLIENT --> CORELIB
+
+  CVXHTTP -. "must have a Hono twin" .-> HONOAPP
+
+  TWENTY[("Twenty<br/>the identity authority<br/>and the system of record")]
+  TELNYX[("Telnyx")]
+  OAUTHTOK --> TWENTY
+  CLIENT --> TWENTY
+  CORELIB --> TELNYX
+  TELNYXKEY --> TELNYX
+
+  NOTE1["Convex imports core by relative path,<br/>not as a package: convex/sequence/actions.ts<br/>reaches ../../packages/core/src/...<br/>directly. One copy of every rule,<br/>reached two ways."]:::note
+  CVXFN -.-> NOTE1
+  CORELIB -.-> NOTE1
+
+  NOTE2["Adding a surface means adding a row,<br/>not a new implementation. A tool with no<br/>registry entry fails check:surfaces,<br/>and so does a registry entry with<br/>no tool."]:::note
+  REGISTRY -.-> NOTE2
+
+  classDef note fill:none,stroke:#5f6f96,stroke-dasharray:4 4,color:#8ea3d6
+  classDef store fill:#1b1030,stroke:#7c5cff,color:#f5f7ff
+  classDef ext fill:#0b1020,stroke:#5ee7ff,color:#f5f7ff
+  classDef cred fill:#2a1f0f,stroke:#fbbf24,color:#f5f7ff
+  class REGISTRY store
+  class TWENTY,TELNYX ext
+  class SESSION,OAUTHTOK,TELNYXKEY,CVXKEY cred
